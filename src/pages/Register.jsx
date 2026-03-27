@@ -57,7 +57,7 @@ export default function Register() {
 
         if (profileError) throw profileError;
 
-        alert("¡Registro exitoso, José! Bienvenido al sistema.");
+        alert("¡Registro exitoso, Bienvenido al sistema.");
         navigate("/"); // Redirigir al login después de registrarse
       }
     } catch (error) {
