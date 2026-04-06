@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+/* Animación de la ruta en el mapa */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.animate-dash {
+  animation: dash 20s linear infinite;
+}
+
+/* Esconde la barra de scroll pero permite el movimiento */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
