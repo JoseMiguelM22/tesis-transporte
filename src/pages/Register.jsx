@@ -1,185 +1,111 @@
 import React, { useState } from "react";
-import { User, Mail, Lock, CreditCard, Phone, Eye, EyeOff, ArrowLeft } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom"; // Importamos useNavigate para redirigir
-import { supabase } from '../lib/supabase'; // Importamos la conexión que creamos
+import { User, Mail, Lock, CreditCard, Phone, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { supabase } from '../lib/supabase';
+import { InputIcon } from "../components/InputIcon"; // Importamos el componente
 
 export default function Register() {
-  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
-
-  // 1. Estado para capturar los datos del formulario
-  const [formData, setFormData] = useState({
-    nombre: '',
-    apellido: '',
-    cedula: '',
-    telefono: '',
-    email: '',
-    password: ''
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({ 
+    nombre: '', apellido: '', cedula: '', telefono: '', email: '', password: '' 
   });
 
-  // 2. Función para actualizar el estado cuando escribes
+  // --- MANEJO DE ESTADO Y FILTROS ---
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value
-    });
+    let val = value;
+    
+    if (name === 'nombre' || name === 'apellido') val = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
+    if (name === 'cedula' || name === 'telefono') val = value.replace(/\D/g, "");
+    if (name === 'password') val = value.replace(/\s/g, "");
+    
+    setFormData({ ...formData, [name]: val });
   };
 
-  // 3. Función principal de registro
+  // --- LÓGICA DE REGISTRO ---
   const handleRegister = async (e) => {
     e.preventDefault();
+    setErrorMsg("");
+    const { email, password, cedula, nombre, apellido, telefono } = formData;
 
+    // Validaciones de Seguridad
+    if (email.length < 10) return setErrorMsg("Email inválido (mín 10 carac.)");
+    const tieneSeguridad = /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
+    if (password.length < 8 || !tieneSeguridad) return setErrorMsg("Clave débil: requiere 8 carac, Mayús, Minús y Núm.");
+
+    setLoading(true);
     try {
-      // Paso A: Crear el usuario en la Autenticación (Caja Fuerte)
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-      });
-
-      if (authError) throw authError;
-
-      // Paso B: Guardar los datos adicionales en la tabla 'perfiles'
-      if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('perfiles')
-          .insert([
-            {
-              id: authData.user.id, // Vinculamos con el ID de la cuenta creada
-              nombre: formData.nombre,
-              apellido: formData.apellido,
-              cedula: formData.cedula,
-              telefono: formData.telefono,
-              email: formData.email,
-              rol: 'estudiante' // Valor por defecto
-            }
-          ]);
-
-        if (profileError) throw profileError;
-
-        alert("¡Registro exitoso, Bienvenido al sistema.");
-        navigate("/"); // Redirigir al login después de registrarse
+      // 1. Verificar duplicados
+      const { data: existe, error: eCheck } = await supabase.from('perfiles').select('cedula, email').or(`cedula.eq.${cedula},email.eq.${email.toLowerCase()}`).maybeSingle();
+      if (eCheck) throw eCheck;
+      if (existe) {
+        setLoading(false);
+        return setErrorMsg(existe.cedula === cedula ? "Cédula ya registrada." : "Correo ya en uso.");
       }
-    } catch (error) {
-      alert("Error: " + error.message);
-    }
+
+      // 2. Auth y Perfil
+      const { data: auth, error: aErr } = await supabase.auth.signUp({ email, password });
+      if (aErr) throw aErr;
+      
+      if (auth.user) {
+        const { error: pErr } = await supabase.from('perfiles').insert([{ id: auth.user.id, nombre: nombre.trim(), apellido: apellido.trim(), cedula, telefono, email: email.toLowerCase().trim(), rol: 'estudiante' }]);
+        if (pErr) throw pErr;
+        alert("¡Registro exitoso!");
+        navigate("/login");
+      }
+    } catch (err) { setErrorMsg(err.message); } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-blue-500 p-4">
-      <div className="w-full max-w-sm backdrop-blur-lg bg-white/20 rounded-3xl shadow-2xl p-6 text-white border border-white/30">
+    <div className="min-h-screen flex items-center justify-center bg-[#1566D0] p-4 font-sans text-white">
+      <div className="w-full max-w-sm backdrop-blur-md bg-white/10 rounded-[32px] shadow-2xl p-8 border border-white/20 relative">
         
-        <Link to="/" className="inline-flex items-center text-sm text-white/80 hover:text-white mb-4 transition-all">
-          <ArrowLeft className="w-4 h-4 mr-1" /> Volver al Login
-        </Link>
-
-        <div className="text-center mb-6">
-          <h2 className="text-3xl font-bold">Registro</h2>
-          <p className="text-white/70 text-sm mt-1">Crea tu cuenta de Estudiante</p>
+        {/* Notificaciones */}
+        {errorMsg && <div className="absolute -top-12 left-0 right-0 bg-red-600 text-white text-[11px] py-2 px-4 rounded-xl flex items-center shadow-lg animate-bounce border border-red-400 font-bold"><AlertCircle className="w-4 h-4 mr-2 shrink-0" /> {errorMsg}</div>}
+        
+        <Link to="/login" className="inline-flex items-center text-[10px] text-white/70 hover:text-white mb-6 transition-all font-bold uppercase tracking-widest"><ArrowLeft className="w-3 h-3 mr-1" /> Volver</Link>
+        
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-black tracking-tighter italic">REGISTRO</h2>
+          <p className="text-white/50 text-[11px] font-bold uppercase tracking-widest mt-1">Portal Estudiantil</p>
         </div>
 
-        {/* 4. Conectamos el formulario a la función */}
-        <form className="space-y-4" onSubmit={handleRegister}>
-          
-          {/* Nombre */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <User className="w-5 h-5 mr-2 opacity-80" />
+        <form className="space-y-3" onSubmit={handleRegister}>
+          <div className="grid grid-cols-2 gap-3">
+            <InputIcon icon={<User size={18}/>} name="nombre" placeholder="Nombre" val={formData.nombre} change={handleChange} max={20}/>
+            <InputIcon icon={<User size={18}/>} name="apellido" placeholder="Apellido" val={formData.apellido} change={handleChange} max={20}/>
+          </div>
+
+          <InputIcon icon={<CreditCard size={18}/>} name="cedula" placeholder="Cédula" val={formData.cedula} change={handleChange} max={9}/>
+          <InputIcon icon={<Phone size={18}/>} name="telefono" placeholder="Teléfono" val={formData.telefono} change={handleChange} max={11}/>
+          <InputIcon icon={<Mail size={18}/>} name="email" type="email" placeholder="Correo" val={formData.email} change={handleChange} max={40}/>
+
+          {/* Campo Password (Especial por el botón de ojo) */}
+          <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10 focus-within:border-white/40 transition-all">
+            <Lock className="w-5 h-5 mr-3 opacity-40" />
             <input 
-              name="nombre"
-              type="text" 
-              placeholder="Nombre" 
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required
-              value={formData.nombre}
-              onChange={handleChange}
+               name="password" type={showPassword ? "text" : "password"} placeholder="Contraseña" 
+               className="bg-transparent outline-none w-full text-white placeholder-white/30 text-sm" 
+               required value={formData.password} onChange={handleChange} maxLength={20} 
             />
-          </div>
-
-          {/* Apellido */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <User className="w-5 h-5 mr-2 opacity-80" />
-            <input 
-              name="apellido"
-              type="text" 
-              placeholder="Apellido" 
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required
-              value={formData.apellido}
-              onChange={handleChange}
-            />
-          </div>
-
-          {/* Cédula */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <CreditCard className="w-5 h-5 mr-2 opacity-80" />
-            <input
-              name="cedula"
-              type="text"
-              placeholder="Cédula de Identidad"
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required 
-              value={formData.cedula}
-              onChange={handleChange}
-            />
-          </div>
-
-          {/* Teléfono */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <Phone className="w-5 h-5 mr-2 opacity-80" />
-            <input 
-              name="telefono"
-              type="tel" 
-              placeholder="Número de Teléfono" 
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required
-              value={formData.telefono}
-              onChange={handleChange}
-            />
-          </div>
-
-          {/* Correo Electrónico */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <Mail className="w-5 h-5 mr-2 opacity-80" />
-            <input 
-              name="email"
-              type="email" 
-              placeholder="Correo Electrónico" 
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required
-              value={formData.email}
-              onChange={handleChange}
-            />
-          </div>
-
-          {/* Contraseña */}
-          <div className="flex items-center bg-white/20 rounded-xl px-3 py-2 border border-white/10">
-            <Lock className="w-5 h-5 mr-2 opacity-80" />
-            <input name="password" type={showPassword ? "text" : "password"} placeholder="Contraseña" 
-              className="bg-transparent outline-none w-full text-white placeholder-white/60 text-sm" 
-              required
-              value={formData.password}
-              onChange={handleChange}
-            />
-            <button
-              onClick={() => setShowPassword(!showPassword)} 
-              type="button" 
-              className="ml-2 hover:scale-110 transition-transform"
-            >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <button onClick={() => setShowPassword(!showPassword)} type="button" className="ml-2 opacity-40 hover:opacity-100 transition-opacity">
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
 
           <button 
-            type="submit"
-            className="w-full bg-white text-blue-600 hover:bg-blue-50 transition-all py-3 rounded-xl font-bold shadow-lg mt-2 active:scale-95"
+             type="submit" disabled={loading} 
+             className="w-full bg-white text-[#1566D0] hover:bg-blue-50 transition-all py-4 rounded-2xl font-black shadow-xl mt-4 active:scale-95 disabled:opacity-50 uppercase tracking-wider"
           >
-            CREAR CUENTA
+            {loading ? "VALIDANDO..." : "CREAR CUENTA"}
           </button>
         </form>
-
-        <p className="text-center text-sm mt-6 text-white/80">¿Ya tienes cuenta?{" "}
-          <Link to="/" className="font-bold text-white hover:underline">Inicia Sesión</Link>
-        </p>
+        <p className="text-center text-[11px] mt-8 text-white/60 font-bold uppercase tracking-wider">
+                  ¿tienes cuenta? <Link to="/login" className="text-white hover:underline decoration-2 underline-offset-4">Inicia Sesión</Link>
+                </p>
       </div>
     </div>
   );
