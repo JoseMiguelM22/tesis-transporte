@@ -80,6 +80,12 @@ export default function Dashboard() {
     if (data) setUnidades(data);
   };
 
+  // --- LÓGICA DE CERRAR SESIÓN ---
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/login");
+  };
+
   // --- LÓGICA DE REPORTE CON LÍMITE DIARIO ---
   const handleReporteParada = async () => {
     // 1. Verificar el límite en localStorage
@@ -372,7 +378,8 @@ export default function Dashboard() {
             <button className="w-full flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all font-black text-[10px] uppercase tracking-widest group"><Bell size={18} /> Notificaciones</button>
           </div>
 
-          <button onClick={() => supabase.auth.signOut()} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase tracking-widest border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"><LogOut size={16} /> Cerrar Sesión</button>
+          {/* ACÁ ESTÁ EL BOTÓN DE CERRAR SESIÓN CORREGIDO */}
+          <button onClick={handleLogout} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase tracking-widest border border-red-500/20 hover:bg-red-500 hover:text-white transition-all"><LogOut size={16} /> Cerrar Sesión</button>
         </div>
       </div>
 
