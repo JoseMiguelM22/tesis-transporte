@@ -33,6 +33,7 @@ export default function LoginCentral() {
 
       if (user.email === MASTER_ADMIN_EMAIL) {
         console.log("⚡ Acceso Master Admin otorgado");
+        // ✅ RUTA CORREGIDA
         navigate("/admin");
         return;
       }
@@ -46,7 +47,8 @@ export default function LoginCentral() {
 
       if (chofer) {
         console.log("🚛 Acceso Chofer detectado");
-        navigate("/driver");
+        // ✅ RUTA CORREGIDA AL NUEVO APP.JSX
+        navigate("/chofer");
         return;
       }
 
@@ -131,7 +133,8 @@ export default function LoginCentral() {
         {/* PIE DE PÁGINA */}
         <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col items-center gap-4">
            <button 
-            onClick={() => navigate("/login")} 
+            // ✅ RUTA CORREGIDA AL NUEVO APP.JSX
+            onClick={() => navigate("/acceso-estudiante")} 
             className="text-[9px] font-black text-slate-300 hover:text-[#0D47A1] uppercase tracking-[0.3em] transition-all"
            >
              Portal de Estudiantes

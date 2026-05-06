@@ -50,14 +50,14 @@ export default function Home() {
           {/* BOTONES */}
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md mt-10">
             <Link
-              to="/login"
+              to="/acceso-estudiante"
               className="flex-1 bg-white text-[#1566D0] hover:bg-blue-50 py-4 rounded-2xl font-bold text-center transition-all active:scale-[0.98] shadow-xl"
             >
               Iniciar sesión
             </Link>
 
             <Link
-              to="/registro"
+              to="/registro-estudiante"
               className="flex-1 bg-[#0D47A1] hover:bg-[#0b3a85] border border-white/10 py-4 rounded-2xl font-bold text-center transition-all active:scale-[0.98] shadow-xl"
             >
               Registrarse

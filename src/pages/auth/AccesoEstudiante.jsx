@@ -45,7 +45,8 @@ export default function Login() {
       if (error) throw error;
 
       if (data?.user) {
-        navigate("/dashboard");
+        // ✅ RUTA CORREGIDA AL NUEVO APP.JSX
+        navigate("/dashboard-estudiante");
       }
     } catch (error) {
       const message =
@@ -212,7 +213,7 @@ export default function Login() {
           <p className="text-center text-sm text-white/65 mt-8">
             ¿No tienes cuenta?{" "}
             <Link
-              to="/registro"
+              to="/registro-estudiante"
               className="font-semibold text-white hover:underline underline-offset-4"
             >
               Regístrate

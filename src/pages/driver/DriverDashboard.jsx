@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { useNavigate } from "react-router-dom";
 import { 
   Car, MapPin, Clock, Users, Power, Navigation, 
-  MinusCircle, PlusCircle, CheckCircle, AlertCircle 
+  MinusCircle, PlusCircle, CheckCircle, AlertCircle, Loader2 
 } from "lucide-react";
 
 export default function DriverDashboard() {
+  const navigate = useNavigate();
   const [unidad, setUnidad] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // --- LÓGICA DE CARGA ---
-  // Aquí suponemos que el chofer ya inició sesión y buscamos la unidad que tiene su ID
   const fetchUnidadAsignada = async () => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
@@ -21,7 +22,7 @@ export default function DriverDashboard() {
         .from('choferes')
         .select('id, nombre')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
       if (chofer) {
         // 2. Buscamos la unidad que tiene vinculado este chofer
@@ -29,7 +30,7 @@ export default function DriverDashboard() {
           .from('unidades')
           .select('*')
           .eq('chofer_id', chofer.id)
-          .single();
+          .maybeSingle();
         
         setUnidad(unit);
       }
@@ -57,13 +58,27 @@ export default function DriverDashboard() {
     if (!error) setUnidad({ ...unidad, estado: nuevoEstado, hora_salida: nuevaHora });
   };
 
-  if (loading) return <div className="min-h-screen bg-[#0D47A1] flex items-center justify-center text-white font-black italic">CARGANDO SISTEMA...</div>;
+  // ✅ FUNCIÓN DE CERRAR SESIÓN
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/"); // Redirige al inicio público
+  };
+
+  if (loading) return (
+    <div className="min-h-screen bg-[#0D47A1] flex flex-col items-center justify-center text-white font-black italic gap-4">
+      <Loader2 className="animate-spin w-10 h-10" />
+      <span className="tracking-widest">CARGANDO SISTEMA...</span>
+    </div>
+  );
 
   if (!unidad) return (
     <div className="min-h-screen bg-slate-50 p-8 flex flex-col items-center justify-center text-center">
       <AlertCircle size={64} className="text-slate-300 mb-4" />
       <h2 className="text-2xl font-black italic text-slate-800 uppercase">Sin Unidad Asignada</h2>
-      <p className="text-slate-500 font-bold mt-2">Contacta con el administrador para vincular tu cuenta a un vehículo.</p>
+      <p className="text-slate-500 font-bold mt-2 mb-8">Contacta con el administrador para vincular tu cuenta a un vehículo.</p>
+      <button onClick={handleLogout} className="flex items-center gap-2 text-[#0D47A1] font-black uppercase text-xs tracking-widest border-b-2 border-[#0D47A1]">
+        Regresar al Inicio
+      </button>
     </div>
   );
 
@@ -72,7 +87,7 @@ export default function DriverDashboard() {
       
       {/* HEADER DE ESTADO */}
       <header className={`p-8 pb-12 transition-colors duration-500 ${unidad.estado === 'en ruta' ? 'bg-orange-500' : 'bg-[#0D47A1]'} text-white rounded-b-[50px] shadow-2xl relative overflow-hidden`}>
-        <div className="relative z-10">
+        <div className="relative z-10 text-left">
           <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60 mb-1">Panel del Operador</p>
           <h1 className="text-4xl font-black italic tracking-tighter uppercase">UNIDAD {unidad.numero_unidad}</h1>
           <div className="flex items-center gap-2 mt-2">
@@ -86,12 +101,12 @@ export default function DriverDashboard() {
       {/* CONTROLES PRINCIPALES */}
       <main className="flex-1 px-6 -mt-8 z-20 space-y-6">
         
-        {/* CARD DE PUESTOS (EL CORAZÓN DEL PANEL) */}
+        {/* CARD DE PUESTOS */}
         <div className="bg-white rounded-[40px] p-8 shadow-xl border border-slate-100 flex flex-col items-center">
-          <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-6">Gestión de Pasajeros</p>
+          <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-6 text-center">Gestión de Pasajeros</p>
           
           <div className="flex items-center gap-8 mb-6">
-            <button onClick={() => updatePuestos(unidad.puestos_libres - 1)} className="text-slate-200 hover:text-red-500 transition-colors">
+            <button onClick={() => updatePuestos(unidad.puestos_libres - 1)} className="text-slate-200 hover:text-red-500 transition-colors active:scale-90">
               <MinusCircle size={60} strokeWidth={1.5} />
             </button>
             
@@ -100,14 +115,14 @@ export default function DriverDashboard() {
               <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">Puestos Libres</p>
             </div>
 
-            <button onClick={() => updatePuestos(unidad.puestos_libres + 1)} className="text-slate-200 hover:text-green-500 transition-colors">
+            <button onClick={() => updatePuestos(unidad.puestos_libres + 1)} className="text-slate-200 hover:text-green-500 transition-colors active:scale-90">
               <PlusCircle size={60} strokeWidth={1.5} />
             </button>
           </div>
 
           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
              <div 
-               className="h-full bg-[#0D47A1] transition-all duration-500" 
+               className={`h-full transition-all duration-500 ${unidad.puestos_libres === 0 ? 'bg-red-500' : 'bg-[#0D47A1]'}`} 
                style={{ width: `${(unidad.puestos_libres / unidad.capacidad_total) * 100}%` }}
              ></div>
           </div>
@@ -115,12 +130,12 @@ export default function DriverDashboard() {
 
         {/* INFO DE RUTA */}
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm">
+          <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm text-left">
             <Clock size={20} className="text-[#0D47A1] mb-2" />
             <p className="text-[10px] font-black uppercase text-slate-400 italic">Salida</p>
             <p className="font-black text-lg text-slate-800">{unidad.hora_salida || '--:--'}</p>
           </div>
-          <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm">
+          <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm text-left">
             <Users size={20} className="text-[#0D47A1] mb-2" />
             <p className="text-[10px] font-black uppercase text-slate-400 italic">Capacidad</p>
             <p className="font-black text-lg text-slate-800">{unidad.capacidad_total} Pers.</p>
@@ -143,12 +158,14 @@ export default function DriverDashboard() {
       </main>
 
       {/* FOOTER DE NAVEGACIÓN */}
-      <footer className="p-8 mt-auto flex justify-center items-center gap-10 text-slate-400">
+      <footer className="p-8 mt-auto flex justify-center items-center gap-16 text-slate-400">
           <button className="flex flex-col items-center gap-1">
             <Car size={24} className="text-[#0D47A1]" />
-            <span className="text-[9px] font-black uppercase tracking-tighter">Mi Unidad</span>
+            <span className="text-[9px] font-black uppercase tracking-tighter text-[#0D47A1]">Mi Unidad</span>
           </button>
-          <button className="flex flex-col items-center gap-1 opacity-40">
+          
+          {/* ✅ BOTÓN DE SALIR CORREGIDO */}
+          <button onClick={handleLogout} className="flex flex-col items-center gap-1 hover:text-red-500 transition-colors">
             <Power size={24} />
             <span className="text-[9px] font-black uppercase tracking-tighter">Salir</span>
           </button>

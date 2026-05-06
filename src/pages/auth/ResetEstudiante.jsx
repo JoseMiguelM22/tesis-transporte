@@ -23,8 +23,8 @@ export default function ResetPassword() {
       return;
     }
 
-    if (password.length < 6) {
-      setMsg("La contraseña debe tener al menos 6 caracteres");
+    if (password.length < 8) {
+      setMsg("La contraseña debe tener al menos 8 caracteres");
       return;
     }
 
@@ -40,7 +40,8 @@ export default function ResetPassword() {
       setMsg("Contraseña actualizada correctamente");
 
       setTimeout(() => {
-        navigate("/login");
+        // ✅ RUTA CORREGIDA: Mandamos al estudiante a su login específico
+        navigate("/acceso-estudiante");
       }, 2000);
     } catch (error) {
       setMsg("Error al actualizar la contraseña");
@@ -50,10 +51,14 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1566D0] flex items-center justify-center px-4 text-white">
+    <div className="min-h-screen bg-[#1566D0] flex items-center justify-center px-4 text-white relative overflow-hidden">
+      
+      {/* EFECTOS DE FONDO PARA MANTENER LA ESTÉTICA */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-300/20 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl" />
 
       {/* CARD */}
-      <div className="w-full max-w-sm backdrop-blur-md bg-white/10 border border-white/15 rounded-3xl shadow-2xl p-8">
+      <div className="relative z-10 w-full max-w-sm backdrop-blur-md bg-white/10 border border-white/15 rounded-3xl shadow-2xl p-8">
 
         {/* ICONO */}
         <div className="flex justify-center mb-6">
@@ -63,17 +68,21 @@ export default function ResetPassword() {
         </div>
 
         {/* TITULO */}
-        <h1 className="text-2xl font-extrabold text-center mb-2">
+        <h1 className="text-2xl font-extrabold text-center mb-2 italic tracking-tighter uppercase">
           Nueva contraseña
         </h1>
 
         <p className="text-center text-white/60 text-sm mb-6">
-          Ingresa tu nueva contraseña segura
+          Ingresa tu nueva contraseña segura para el sistema IMTT
         </p>
 
         {/* MENSAJE */}
         {msg && (
-          <div className="mb-4 text-center text-sm text-white/90 bg-white/10 border border-white/10 rounded-xl p-2">
+          <div className={`mb-4 text-center text-xs font-bold rounded-xl p-3 border ${
+            msg.includes("correctamente") 
+              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300" 
+              : "bg-red-500/20 border-red-500/50 text-red-300"
+          }`}>
             {msg}
           </div>
         )}
@@ -82,7 +91,7 @@ export default function ResetPassword() {
         <form onSubmit={handleResetPassword} className="space-y-4">
 
           {/* PASSWORD */}
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-white/30 transition">
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-white/30 transition shadow-inner">
             <Lock className="w-5 h-5 mr-3 text-white/40" />
 
             <input
@@ -90,7 +99,7 @@ export default function ResetPassword() {
               placeholder="Nueva contraseña"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-transparent outline-none text-white placeholder-white/40 text-sm"
+              className="w-full bg-transparent outline-none text-white placeholder-white/35 text-sm font-bold"
             />
 
             <button
@@ -107,7 +116,7 @@ export default function ResetPassword() {
           </div>
 
           {/* CONFIRM PASSWORD */}
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-white/30 transition">
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-white/30 transition shadow-inner">
             <CheckCircle className="w-5 h-5 mr-3 text-white/40" />
 
             <input
@@ -115,7 +124,7 @@ export default function ResetPassword() {
               placeholder="Confirmar contraseña"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full bg-transparent outline-none text-white placeholder-white/40 text-sm"
+              className="w-full bg-transparent outline-none text-white placeholder-white/35 text-sm font-bold"
             />
           </div>
 
@@ -123,15 +132,15 @@ export default function ResetPassword() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-white text-[#1566D0] py-3 rounded-2xl font-bold shadow-lg hover:bg-blue-50 transition active:scale-[0.98] disabled:opacity-60"
+            className="w-full bg-white text-[#1566D0] py-4 rounded-2xl font-black italic tracking-widest shadow-xl hover:bg-blue-50 transition active:scale-[0.98] disabled:opacity-60 uppercase"
           >
-            {loading ? "Actualizando..." : "Actualizar contraseña"}
+            {loading ? "Actualizando..." : "ACTUALIZAR CLAVE"}
           </button>
         </form>
 
         {/* FOOTER */}
-        <p className="text-center text-xs text-white/60 mt-6">
-          Serás redirigido al login automáticamente
+        <p className="text-center text-[10px] font-bold uppercase text-white/40 mt-6 tracking-widest">
+          Redirección automática al finalizar
         </p>
       </div>
     </div>

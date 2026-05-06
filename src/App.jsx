@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import { supabase } from "./lib/supabase";
 
 // --- IMPORTAR TUS VISTAS ---
@@ -21,7 +21,7 @@ function AuthListener({ children }) {
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
-        navigate('/reset-password'); // Ajusta a la ruta que uses para el reset
+        navigate('/reset-password');
       }
     });
     return () => authListener.subscription.unsubscribe();
@@ -34,14 +34,14 @@ export default function App() {
     <Router>
       <AuthListener>
         <Routes>
-          {/* --- RUTAS PÚBLICAS (Cualquiera entra) --- */}
+          {/* --- RUTAS PÚBLICAS --- */}
           <Route path="/" element={<Home />} />
           <Route path="/acceso-estudiante" element={<AccesoEstudiante />} />
           <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
           <Route path="/reset-password" element={<ResetEstudiante />} />
           <Route path="/acceso-admin" element={<AccesoAdministracion />} />
 
-          {/* --- RUTAS PRIVADAS (Solo logueados) --- */}
+          {/* --- RUTAS PRIVADAS (Protegidas) --- */}
           <Route 
             path="/dashboard-estudiante" 
             element={
@@ -68,6 +68,9 @@ export default function App() {
               </ProtectedRoute>
             } 
           />
+
+          {/* 🔥 EL SALVAVIDAS: Si escriben una ruta mala, los manda al Home */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthListener>
     </Router>
