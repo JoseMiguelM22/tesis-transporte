@@ -1,42 +1,75 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import AdminDashboard from "./pages/AdminDashboard";
-import DriverDashboard from "./pages/DriverDashboard";
-import LoginCentral from "./pages/LoginCentral"; 
-import ResetPassword from "./pages/ResetPassword"; 
+import React, { useEffect } from "react";
+import { BrowserRouter as Router, Routes, Route, useNavigate } from "react-router-dom";
+import { supabase } from "./lib/supabase";
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+// --- IMPORTAR TUS VISTAS ---
+import Home from "./pages/auth/Home";
+import AccesoEstudiante from "./pages/auth/AccesoEstudiante";
+import RegistroEstudiante from "./pages/auth/RegistroEstudiante";
+import ResetEstudiante from "./pages/auth/ResetEstudiante";
+import AccesoAdministracion from "./pages/auth/AccesoAdministracion";
 
-        {/* Pantalla de inicio (Home) */}
-        <Route path="/" element={<Home />} />
+import EstudianteDashboard from "./pages/student/EstudianteDashboard";
+import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
+import DriverDashboard from "./pages/driver/DriverDashboard";
 
-        {/* Pantalla de inicio (Login) */}
-        <Route path="/login" element={<Login />} />
+// --- IMPORTAR EL GUARDAESPALDAS ---
+import ProtectedRoute from "./components/ProtectedRoute";
 
-        {/* Ruta especial para ti y tus choferes */}
-         <Route path="/auth-central" element={<LoginCentral />} />
-        
-        {/* Pantalla para registrarse */}
-        <Route path="/registro" element={<Register />} />
-        
-        {/* Pantalla del Dashboard (Panel de Control) */}
-        <Route path="/dashboard" element={<Dashboard />} />
-
-        <Route path="/admin" element={<AdminDashboard />} />
-
-        <Route path="/driver" element={<DriverDashboard />} />
-
-        <Route path="/reset-password" element={<ResetPassword />} />
-      </Routes>
-    </BrowserRouter>
-  );
+function AuthListener({ children }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        navigate('/reset-password'); // Ajusta a la ruta que uses para el reset
+      }
+    });
+    return () => authListener.subscription.unsubscribe();
+  }, [navigate]);
+  return children;
 }
 
-export default App;
+export default function App() {
+  return (
+    <Router>
+      <AuthListener>
+        <Routes>
+          {/* --- RUTAS PÚBLICAS (Cualquiera entra) --- */}
+          <Route path="/" element={<Home />} />
+          <Route path="/acceso-estudiante" element={<AccesoEstudiante />} />
+          <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
+          <Route path="/reset-password" element={<ResetEstudiante />} />
+          <Route path="/acceso-admin" element={<AccesoAdministracion />} />
 
+          {/* --- RUTAS PRIVADAS (Solo logueados) --- */}
+          <Route 
+            path="/dashboard-estudiante" 
+            element={
+              <ProtectedRoute>
+                <EstudianteDashboard />
+              </ProtectedRoute>
+            } 
+          />
+          
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute>
+                <AdminDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/chofer" 
+            element={
+              <ProtectedRoute>
+                <DriverDashboard />
+              </ProtectedRoute>
+            } 
+          />
+        </Routes>
+      </AuthListener>
+    </Router>
+  );
+}

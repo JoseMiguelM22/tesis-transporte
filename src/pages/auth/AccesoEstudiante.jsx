@@ -9,8 +9,8 @@ import {
   ArrowLeft,
 } from "lucide-react";
 
-import { supabase } from "../lib/supabase";
-import { InputIcon } from "../components/InputIcon.jsx";
+import { supabase } from "../../lib/supabase.js";
+import { InputIcon } from "../../components/InputIcon.jsx";
 
 export default function Login() {
   const navigate = useNavigate();

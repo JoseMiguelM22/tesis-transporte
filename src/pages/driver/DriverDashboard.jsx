@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { 
   Car, MapPin, Clock, Users, Power, Navigation, 
   MinusCircle, PlusCircle, CheckCircle, AlertCircle 

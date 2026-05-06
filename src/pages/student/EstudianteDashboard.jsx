@@ -4,9 +4,9 @@ import {
   User, Camera, Check, Edit2, Loader2, ShieldCheck, CreditCard,
   Image as ImageIcon, ArrowRight, AlertTriangle
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
-import { VehicleCard } from "../components/VehicleCard";
+import { VehicleCard } from "../../components/VehicleCard";
 
 export default function Dashboard() {
   const navigate = useNavigate();

@@ -4,8 +4,8 @@ import {
   Eye, EyeOff, ArrowLeft, AlertCircle, CheckCircle, XCircle
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { supabase } from '../lib/supabase';
-import { InputIcon } from "../components/InputIcon";
+import { supabase } from '../../lib/supabase';
+import { InputIcon } from "../../components/InputIcon";
 
 export default function Register() {
   const navigate = useNavigate();

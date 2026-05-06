@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { Car, Lock, Mail, Eye, EyeOff, ShieldCheck, Settings, ArrowRight, UserCheck } from "lucide-react";
 
