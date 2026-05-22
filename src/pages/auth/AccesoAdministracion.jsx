@@ -28,7 +28,6 @@ export default function LoginCentral() {
       // --- LÓGICA DE DETECCIÓN DE ROLES ---
 
       // A. ¿ES EL ADMINISTRADOR MAESTRO? 
-      // Aquí pones el correo que acabas de crear en Supabase
       const MASTER_ADMIN_EMAIL = "admin@gmail.com"; 
 
       if (user.email === MASTER_ADMIN_EMAIL) {
