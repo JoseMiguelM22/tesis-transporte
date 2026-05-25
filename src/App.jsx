@@ -8,6 +8,8 @@ import AccesoEstudiante from "./pages/auth/AccesoEstudiante";
 import RegistroEstudiante from "./pages/auth/RegistroEstudiante";
 import ResetEstudiante from "./pages/auth/ResetEstudiante";
 import AccesoAdministracion from "./pages/auth/AccesoAdministracion";
+import RegistroChofer from "./pages/auth/RegistroChofer";
+import AccesoChofer from "./pages/auth/AccesoChofer";
 
 import EstudianteDashboard from "./pages/student/EstudianteDashboard";
 import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
@@ -40,6 +42,8 @@ export default function App() {
           <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
           <Route path="/reset-password" element={<ResetEstudiante />} />
           <Route path="/acceso-admin" element={<AccesoAdministracion />} />
+          <Route path="/registro-chofer" element={<RegistroChofer />} />
+          <Route path="/acceso-chofer" element={<AccesoChofer />} />
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
           <Route 
@@ -60,8 +64,9 @@ export default function App() {
             } 
           />
 
+          {/* 🎯 URL SINCRONIZADA EN MINÚSCULAS PARA EL OPERADOR */}
           <Route 
-            path="/chofer" 
+            path="/dashboard-chofer" 
             element={
               <ProtectedRoute>
                 <DriverDashboard />
