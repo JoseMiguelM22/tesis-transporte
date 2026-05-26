@@ -131,13 +131,7 @@ export default function LoginCentral() {
 
         {/* PIE DE PÁGINA */}
         <div className="mt-10 pt-6 border-t border-slate-100 flex flex-col items-center gap-4">
-           <button 
-            // ✅ RUTA CORREGIDA AL NUEVO APP.JSX
-            onClick={() => navigate("/acceso-estudiante")} 
-            className="text-[9px] font-black text-slate-300 hover:text-[#0D47A1] uppercase tracking-[0.3em] transition-all"
-           >
-             Portal de Estudiantes
-           </button>
+           
            <div className="flex items-center gap-2 opacity-30">
               <ShieldCheck size={12} />
               <span className="text-[8px] font-bold uppercase">Sistema Encriptado 2026</span>

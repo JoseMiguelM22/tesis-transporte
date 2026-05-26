@@ -32,11 +32,6 @@ export default function Home() {
       textoBoton: "Ingresar como Chequeador",
       colorBoton: "bg-slate-800 text-white hover:bg-slate-900",
     },
-    administrador: {
-      ruta: "/acceso-admin",
-      textoBoton: "Ingresar como Administrador",
-      colorBoton: "bg-blue-600 text-white hover:bg-blue-500",
-    },
   };
 
   return (
@@ -93,13 +88,6 @@ export default function Home() {
               className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all ${rolSeleccionado === "chequeador" ? "bg-slate-900 text-white shadow-lg scale-105" : "text-white/60 hover:text-white"}`}
             >
               <UserCheck size={16} /> Chequeador
-            </button>
-
-            <button 
-              onClick={() => setRolSeleccionado("administrador")}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all ${rolSeleccionado === "administrador" ? "bg-blue-500 text-white shadow-lg scale-105" : "text-white/60 hover:text-white"}`}
-            >
-              <UserCheck size={16} /> Administrador
             </button>
 
             
