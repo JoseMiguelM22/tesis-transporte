@@ -150,9 +150,7 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-4"><AlertTriangle size={20} className={reportesParada.length > 0 ? "text-red-400" : ""} /> Paradas Llenas</div>
             {reportesParada.length > 0 && <span className="bg-red-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-full">{reportesParada.length}</span>}
           </button>
-          <div className="pt-4 border-t border-white/10">
-            <button onClick={() => setModalType("register")} className="flex items-center gap-4 w-full p-4 bg-emerald-500/20 text-emerald-300 rounded-2xl font-black italic border border-emerald-500/20 hover:bg-emerald-500/30 transition-all"><Plus size={20}/> DAR DE ALTA VEHÍCULO</button>
-          </div>
+          
         </nav>
         <div className="p-10 border-t border-white/5"><button onClick={() => { supabase.auth.signOut(); navigate("/acceso-admin"); }} className="flex items-center gap-3 text-white/50 hover:text-white font-bold italic uppercase text-xs transition-all"><Power size={16}/> Cerrar Sesión</button></div>
       </aside>
