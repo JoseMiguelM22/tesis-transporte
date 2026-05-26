@@ -13,8 +13,9 @@ export default function AdminDashboard() {
   
   // --- ESTADOS DE CONTROL DE INTERFAZ ---
   const [activeTab, setActiveTab] = useState("flota"); 
-  const [subTabKyc, setSubTabKyc] = useState("estudiantes"); 
+  const [subTabKyc, setSubTabKyc] = useState("estudiantes"); // "estudiantes", "choferes", "chequeadores"
   const [filtroChoferEstatus, setFiltroChoferEstatus] = useState("pendientes"); 
+  const [filtroChequeadorEstatus, setFiltroChequeadorEstatus] = useState("pendientes"); 
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState(null);
   const [modalType, setModalType] = useState(null); // "edit" o "register"
@@ -22,10 +23,12 @@ export default function AdminDashboard() {
   const [dispatchTarget, setDispatchTarget] = useState(null); 
   const [searchTerm, setSearchTerm] = useState(""); 
   const [searchChofer, setSearchChofer] = useState(""); 
+  const [searchChequeador, setSearchChequeador] = useState(""); 
 
   // --- ESTADOS DE DATA (BITÁCORAS HISTÓRICAS COMPLETAS) ---
-  const [choferes, setChoferes] = useState([]); // Universo completo de conductores y unidades unificadas
-  const [estudiantes, setEstudiantes] = useState([]); // Universo completo del alumnado
+  const [choferes, setChoferes] = useState([]); 
+  const [estudiantes, setEstudiantes] = useState([]); 
+  const [chequeadores, setChequeadores] = useState([]); // 🎯 NUEVO ESTADO PARA CHEQUEADORES
   const [reportesParada, setReportesParada] = useState([]); 
   const [editData, setEditData] = useState(null);
   const [formData, setFormData] = useState({ numero_unit: "", placa: "", capacidad: 4, nom_chof: "", apellido_chof: "", ced_chof: "", tel_chof: "", mail_chof: "", pass_chof: "" });
@@ -33,14 +36,16 @@ export default function AdminDashboard() {
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [chRes, estRes, repRes] = await Promise.all([
+      const [chRes, estRes, repRes, cheqRes] = await Promise.all([
         supabase.from("choferes").select("*").order("apellido", { ascending: true }),
         supabase.from("perfiles").select("*").eq("rol", "estudiante").order("apellido", { ascending: true }),
-        supabase.from("reportes_parada").select("id, parada_nombre, creado_at, perfiles(nombre, apellido, cedula)").eq("activo", true).order("creado_at", { ascending: false })
+        supabase.from("reportes_parada").select("id, parada_nombre, creado_at, perfiles(nombre, apellido, cedula)").eq("activo", true).order("creado_at", { ascending: false }),
+        supabase.from("chequeadores").select("*").order("apellido", { ascending: true }) // 🎯 CARGA DE CHEQUEADORES
       ]);
       setChoferes(chRes.data || []);
       setEstudiantes(estRes.data || []);
       setReportesParada(repRes.data || []);
+      setChequeadores(cheqRes.data || []);
     } catch (e) { console.error("Error de sincronización:", e.message); }
     setLoading(false);
   };
@@ -53,9 +58,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const manejarClicsExteriores = (e) => {
-      if (sidebarRef.current && !sidebarRef.current.contains(e.target) && !e.target.closest("button")) {
-        // Control opcional para eventos de cierre global
-      }
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target) && !e.target.closest("button")) {}
     };
     document.addEventListener("mousedown", manejarClicsExteriores);
     return () => document.removeEventListener("mousedown", manejarClicsExteriores);
@@ -116,8 +119,18 @@ export default function AdminDashboard() {
     return filtroChoferEstatus === "pendientes" ? match && (c.kyc_cedula_url && c.kyc_vehiculo_url && c.kyc_rostro_url) && !c.kyc_verificado : match;
   });
 
+  // 🎯 FILTRO PARA CHEQUEADORES
+  const chequeadoresFiltrados = chequeadores.filter(c => {
+    const s = searchChequeador.toLowerCase();
+    const match = c.nombre?.toLowerCase().includes(s) || c.apellido?.toLowerCase().includes(s) || c.cedula?.toLowerCase().includes(s);
+    return filtroChequeadorEstatus === "pendientes" ? match && (c.kyc_cedula_url && c.kyc_rostro_url) && !c.kyc_verificado : match;
+  });
+
   const estudiantesPorValidar = estudiantes.filter(e => !e.kyc_verificado && e.carnet_url).length;
   const pendientesChof = choferes.filter(c => (c.kyc_cedula_url && c.kyc_vehiculo_url && c.kyc_rostro_url) && !c.kyc_verificado).length;
+  const pendientesCheq = chequeadores.filter(c => (c.kyc_cedula_url && c.kyc_rostro_url) && !c.kyc_verificado).length; // 🎯 CONTADOR CHEQUEADORES PENDIENTES
+  
+  const totalNotificacionesKyc = estudiantesPorValidar + pendientesChof + pendientesCheq;
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-900 overflow-hidden text-left">
@@ -131,7 +144,7 @@ export default function AdminDashboard() {
           <button onClick={() => setActiveTab("flota")} className={`flex items-center gap-4 w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "flota" ? 'bg-white/10 shadow-lg border-l-4 border-blue-400' : 'opacity-60 hover:opacity-100'}`}><LayoutDashboard size={20}/> Monitoreo de Línea</button>
           <button onClick={() => setActiveTab("kyc")} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "kyc" ? 'bg-white/10 shadow-lg border-l-4 border-blue-400' : 'opacity-60 hover:opacity-100'}`}>
             <div className="flex items-center gap-4"><Users size={20}/> Auditoría KYC</div>
-            {(estudiantesPorValidar + pendientesChof) > 0 && <span className="bg-orange-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-full">{estudiantesPorValidar + pendientesChof}</span>}
+            {totalNotificacionesKyc > 0 && <span className="bg-orange-500 text-white font-bold text-[10px] px-2.5 py-1 rounded-full">{totalNotificacionesKyc}</span>}
           </button>
           <button onClick={() => setActiveTab("alertas")} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "alertas" ? 'bg-white/10 shadow-lg border-l-4 border-red-400' : 'opacity-60 hover:opacity-100'}`}>
             <div className="flex items-center gap-4"><AlertTriangle size={20} className={reportesParada.length > 0 ? "text-red-400" : ""} /> Paradas Llenas</div>
@@ -157,7 +170,6 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-[40px] shadow-xl border border-slate-100 overflow-hidden">
               <table className="w-full text-left"><thead className="bg-slate-50/50"><tr className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-400"><th className="px-10 py-8">Vehículo (Placa)</th><th className="px-10 py-8">Operador Encargado</th><th className="px-10 py-8">Puestos Libres</th><th className="px-10 py-8 text-right">Modificaciones</th></tr></thead>
                 <tbody className="divide-y divide-slate-50">
-                  {/* 🎯 CORRECCIÓN: Ahora itera sobre el arreglo correcto 'choferes' */}
                   {choferes.map(u => (
                     <React.Fragment key={u.id}>
                       <tr className="group hover:bg-slate-50/30">
@@ -181,62 +193,116 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* VISTA B: AUDITORÍA KYC COMPLETADO */}
+          {/* VISTA B: AUDITORÍA KYC COMPLETADO CON 3 PESTAÑAS */}
           {activeTab === "kyc" && (
             <div className="space-y-6">
               <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                <div className="flex bg-slate-200/60 p-1.5 rounded-2xl w-full max-w-lg shadow-inner">
+                
+                {/* 🎯 TABS DE SELECCIÓN DE ROLES (ESTUDIANTE / CHOFER / CHEQUEADOR) */}
+                <div className="flex bg-slate-200/60 p-1.5 rounded-2xl w-full max-w-2xl shadow-inner">
                   <button onClick={() => { setSubTabKyc("estudiantes"); setSearchTerm(""); }} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase transition-all ${subTabKyc === "estudiantes" ? "bg-[#0D47A1] text-white shadow-md" : "text-slate-500"}`}>🧑‍🎓 Estudiantes ({estudiantes.length})</button>
                   <button onClick={() => { setSubTabKyc("choferes"); setSearchChofer(""); }} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase transition-all ${subTabKyc === "choferes" ? "bg-[#0D47A1] text-white shadow-md" : "text-slate-500"}`}>🚍 Conductores ({choferes.length})</button>
+                  <button onClick={() => { setSubTabKyc("chequeadores"); setSearchChequeador(""); }} className={`flex-1 py-3.5 rounded-xl text-xs font-black uppercase transition-all ${subTabKyc === "chequeadores" ? "bg-[#0D47A1] text-white shadow-md" : "text-slate-500"}`}>📋 Chequeadores ({chequeadores.length})</button>
                 </div>
                 
                 <div className="flex items-center gap-2 w-full lg:w-auto">
-                  {subTabKyc === "choferes" && <select value={filtroChoferEstatus} onChange={(e) => setFiltroChoferEstatus(e.target.value)} className="bg-white border text-xs font-black p-3 rounded-xl uppercase tracking-wider text-slate-700 shadow-sm"><option value="pendientes">Pendientes ({pendientesChof})</option><option value="todos">Historial Completo</option></select>}
+                  {/* SELECTOR DE FILTRO DE HISTORIAL O PENDIENTES */}
+                  {subTabKyc === "choferes" && (
+                    <select value={filtroChoferEstatus} onChange={(e) => setFiltroChoferEstatus(e.target.value)} className="bg-white border text-xs font-black p-3 rounded-xl uppercase tracking-wider text-slate-700 shadow-sm"><option value="pendientes">Pendientes ({pendientesChof})</option><option value="todos">Historial Completo</option></select>
+                  )}
+                  {subTabKyc === "chequeadores" && (
+                    <select value={filtroChequeadorEstatus} onChange={(e) => setFiltroChequeadorEstatus(e.target.value)} className="bg-white border text-xs font-black p-3 rounded-xl uppercase tracking-wider text-slate-700 shadow-sm"><option value="pendientes">Pendientes ({pendientesCheq})</option><option value="todos">Historial Completo</option></select>
+                  )}
+
                   <div className="relative flex-1 sm:w-64">
                     <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                    <input type="text" placeholder="Buscar por nombre o cédula..." value={subTabKyc === "estudiantes" ? searchTerm : searchChofer} onChange={(e) => subTabKyc === "estudiantes" ? setSearchTerm(e.target.value) : setSearchChofer(e.target.value)} className="w-full bg-white border rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs" />
+                    <input 
+                      type="text" 
+                      placeholder="Buscar por nombre o cédula..." 
+                      value={subTabKyc === "estudiantes" ? searchTerm : subTabKyc === "choferes" ? searchChofer : searchChequeador} 
+                      onChange={(e) => {
+                        if (subTabKyc === "estudiantes") setSearchTerm(e.target.value);
+                        else if (subTabKyc === "choferes") setSearchChofer(e.target.value);
+                        else setSearchChequeador(e.target.value);
+                      }} 
+                      className="w-full bg-white border rounded-xl pl-9 pr-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs" 
+                    />
                   </div>
                 </div>
               </div>
 
               <div className="bg-white rounded-[40px] shadow-xl border border-slate-100 overflow-hidden">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-50/50"><tr className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-400"><th className="px-10 py-8">Nombre Completo</th><th className="px-10 py-8">Cédula</th><th className="px-10 py-8">{subTabKyc === "estudiantes" ? "Estatus" : "Inspección (3 Fotos)"}</th><th className="px-10 py-8 text-right">Dictamen</th></tr></thead>
+                  <thead className="bg-slate-50/50">
+                    <tr className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-400">
+                      <th className="px-10 py-8">Nombre Completo</th>
+                      <th className="px-10 py-8">Cédula</th>
+                      <th className="px-10 py-8">
+                        {subTabKyc === "estudiantes" ? "Estatus" : subTabKyc === "choferes" ? "Inspección (3 Fotos)" : "Inspección (2 Fotos)"}
+                      </th>
+                      <th className="px-10 py-8 text-right">Dictamen</th>
+                    </tr>
+                  </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {subTabKyc === "estudiantes" ? (
-                      estudiantesFiltrados.map(est => (
-                        <tr key={est.id} className="hover:bg-slate-50/40">
-                          <td className="px-10 py-6 font-black text-slate-700 uppercase">{est.nombre} {est.apellido}</td>
-                          <td className="px-10 py-6 font-bold text-slate-400 tracking-wider">V-{est.cedula}</td>
-                          <td className="px-10 py-6"><span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${est.kyc_verificado ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"}`}>{est.kyc_verificado ? "✔ Validado" : "⏳ Por Validar"}</span></td>
-                          <td className="px-10 py-6 text-right">
-                            <div className="flex justify-end gap-2">
-                              {est.carnet_url && <button onClick={() => setSelectedKycDoc({ titulo: `Carnet Estudiante: ${est.nombre}`, url: est.carnet_url })} className="bg-blue-50 text-[#0D47A1] px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-[#0D47A1] hover:text-white transition-all"><Eye size={12}/></button>}
-                              {!est.kyc_verificado ? <button onClick={() => handleEstatusKYC("perfiles", est.id, true)} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"><Check size={14}/></button> : <button onClick={() => handleEstatusKYC("perfiles", est.id, false, { carnet_url: null })} className="text-[10px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Revocar</button>}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      choferesFiltrados.map(chof => (
-                        <tr key={chof.id} className="hover:bg-slate-50/40">
-                          <td className="px-10 py-6 text-slate-800"><p className="font-black uppercase leading-none">{chof.nombre} {chof.apellido}</p><span className="text-[10px] text-[#0D47A1] font-black uppercase block mt-1">Placa: {chof.placa_vehiculo}</span></td>
-                          <td className="px-10 py-6 font-bold text-slate-500 tracking-wider">V-{chof.cedula}</td>
-                          <td className="px-10 py-6">
-                            <div className="flex gap-2">
-                              <button disabled={!chof.kyc_cedula_url} onClick={() => setSelectedKycDoc({ titulo: `Cédula: ${chof.nombre}`, url: chof.kyc_cedula_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_cedula_url ? 'bg-blue-50 text-[#0D47A1] border-blue-100 hover:bg-[#0D47A1] hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><FileText size={12} /></button>
-                              <button disabled={!chof.kyc_vehiculo_url} onClick={() => setSelectedKycDoc({ titulo: `Vehículo Placa [${chof.placa_vehiculo}]`, url: chof.kyc_vehiculo_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_vehiculo_url ? 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><Car size={12} /></button>
-                              <button disabled={!chof.kyc_rostro_url} onClick={() => setSelectedKycDoc({ titulo: `Rostro Conductor: ${chof.nombre}`, url: chof.kyc_rostro_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_rostro_url ? 'bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-600 hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><Smile size={12} /></button>
-                            </div>
-                          </td>
-                          <td className="px-10 py-6 text-right">
-                            <div className="flex justify-end gap-2">
-                              {!chof.kyc_verificado ? <button disabled={!(chof.kyc_cedula_url && chof.kyc_vehiculo_url && chof.kyc_rostro_url)} onClick={() => handleEstatusKYC("choferes", chof.id, true)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm disabled:opacity-30">Validar</button> : <button onClick={() => handleEstatusKYC("choferes", chof.id, false, { kyc_cedula_url: null, kyc_vehiculo_url: null, kyc_rostro_url: null })} className="text-[10px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Revocar</button>}
-                            </div>
-                          </td>
-                        </tr>
-                      ))
-                    )}
+                    
+                    {/* TABLA ESTUDIANTES */}
+                    {subTabKyc === "estudiantes" && estudiantesFiltrados.map(est => (
+                      <tr key={est.id} className="hover:bg-slate-50/40">
+                        <td className="px-10 py-6 font-black text-slate-700 uppercase">{est.nombre} {est.apellido}</td>
+                        <td className="px-10 py-6 font-bold text-slate-400 tracking-wider">V-{est.cedula}</td>
+                        <td className="px-10 py-6"><span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${est.kyc_verificado ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700"}`}>{est.kyc_verificado ? "✔ Validado" : "⏳ Por Validar"}</span></td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            {est.carnet_url && <button onClick={() => setSelectedKycDoc({ titulo: `Carnet Estudiante: ${est.nombre}`, url: est.carnet_url })} className="bg-blue-50 text-[#0D47A1] px-4 py-2 rounded-xl text-xs font-black uppercase hover:bg-[#0D47A1] hover:text-white transition-all"><Eye size={12}/></button>}
+                            {!est.kyc_verificado ? <button onClick={() => handleEstatusKYC("perfiles", est.id, true)} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all"><Check size={14}/></button> : <button onClick={() => handleEstatusKYC("perfiles", est.id, false, { carnet_url: null })} className="text-[10px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Revocar</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* TABLA CHOFERES */}
+                    {subTabKyc === "choferes" && choferesFiltrados.map(chof => (
+                      <tr key={chof.id} className="hover:bg-slate-50/40">
+                        <td className="px-10 py-6 text-slate-800"><p className="font-black uppercase leading-none">{chof.nombre} {chof.apellido}</p><span className="text-[10px] text-[#0D47A1] font-black uppercase block mt-1">Placa: {chof.placa_vehiculo}</span></td>
+                        <td className="px-10 py-6 font-bold text-slate-500 tracking-wider">V-{chof.cedula}</td>
+                        <td className="px-10 py-6">
+                          <div className="flex gap-2">
+                            <button disabled={!chof.kyc_cedula_url} onClick={() => setSelectedKycDoc({ titulo: `Cédula: ${chof.nombre}`, url: chof.kyc_cedula_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_cedula_url ? 'bg-blue-50 text-[#0D47A1] border-blue-100 hover:bg-[#0D47A1] hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><FileText size={12} /></button>
+                            <button disabled={!chof.kyc_vehiculo_url} onClick={() => setSelectedKycDoc({ titulo: `Vehículo Placa [${chof.placa_vehiculo}]`, url: chof.kyc_vehiculo_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_vehiculo_url ? 'bg-orange-50 text-orange-700 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><Car size={12} /></button>
+                            <button disabled={!chof.kyc_rostro_url} onClick={() => setSelectedKycDoc({ titulo: `Rostro Conductor: ${chof.nombre}`, url: chof.kyc_rostro_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${chof.kyc_rostro_url ? 'bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-600 hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><Smile size={12} /></button>
+                          </div>
+                        </td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            {!chof.kyc_verificado ? <button disabled={!(chof.kyc_cedula_url && chof.kyc_vehiculo_url && chof.kyc_rostro_url)} onClick={() => handleEstatusKYC("choferes", chof.id, true)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm disabled:opacity-30">Validar</button> : <button onClick={() => handleEstatusKYC("choferes", chof.id, false, { kyc_cedula_url: null, kyc_vehiculo_url: null, kyc_rostro_url: null })} className="text-[10px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Revocar</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* 🎯 NUEVA TABLA: CHEQUEADORES */}
+                    {subTabKyc === "chequeadores" && chequeadoresFiltrados.map(cheq => (
+                      <tr key={cheq.id} className="hover:bg-slate-50/40">
+                        <td className="px-10 py-6 text-slate-800"><p className="font-black uppercase leading-none">{cheq.nombre} {cheq.apellido}</p></td>
+                        <td className="px-10 py-6 font-bold text-slate-500 tracking-wider">V-{cheq.cedula}</td>
+                        <td className="px-10 py-6">
+                          <div className="flex gap-2">
+                            <button disabled={!cheq.kyc_cedula_url} onClick={() => setSelectedKycDoc({ titulo: `Cédula: ${cheq.nombre}`, url: cheq.kyc_cedula_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${cheq.kyc_cedula_url ? 'bg-blue-50 text-[#0D47A1] border-blue-100 hover:bg-[#0D47A1] hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><FileText size={12} /></button>
+                            <button disabled={!cheq.kyc_rostro_url} onClick={() => setSelectedKycDoc({ titulo: `Rostro Chequeador: ${cheq.nombre}`, url: cheq.kyc_rostro_url })} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase border ${cheq.kyc_rostro_url ? 'bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-600 hover:text-white' : 'bg-slate-50 text-slate-300 border-transparent cursor-not-allowed'}`}><Smile size={12} /></button>
+                          </div>
+                        </td>
+                        <td className="px-10 py-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            {!cheq.kyc_verificado ? (
+                              <button disabled={!(cheq.kyc_cedula_url && cheq.kyc_rostro_url)} onClick={() => handleEstatusKYC("chequeadores", cheq.id, true)} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-black uppercase shadow-sm disabled:opacity-30">Validar</button>
+                            ) : (
+                              <button onClick={() => handleEstatusKYC("chequeadores", cheq.id, false, { kyc_cedula_url: null, kyc_rostro_url: null })} className="text-[10px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-600 hover:text-white transition-all">Revocar</button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+
                   </tbody>
                 </table>
               </div>
@@ -277,7 +343,6 @@ export default function AdminDashboard() {
             </div>
             <div className="mb-6 space-y-2 text-left bg-slate-50 p-4 rounded-2xl border border-slate-100"><p className="text-sm font-bold text-slate-700">📍 Parada: <span className="text-red-600 font-black uppercase">{dispatchTarget.parada_nombre}</span></p></div>
             <div className="space-y-2 max-h-60 overflow-y-auto mb-8">
-              {/* 🎯 CORRECCIÓN: Utiliza el filtro directo sobre 'choferes' */}
               {choferes.filter(u => u.estado === 'disponible' && u.kyc_verificado).length > 0 ? (
                 choferes.filter(u => u.estado === 'disponible' && u.kyc_verificado).map(unit => (
                   <button key={unit.id} onClick={() => handleConfirmarDespacho(unit.id)} className="w-full bg-white hover:bg-blue-50 border p-4 rounded-xl flex items-center justify-between group transition-all text-left" >

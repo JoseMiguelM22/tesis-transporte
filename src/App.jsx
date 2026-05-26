@@ -10,10 +10,13 @@ import ResetEstudiante from "./pages/auth/ResetEstudiante";
 import AccesoAdministracion from "./pages/auth/AccesoAdministracion";
 import RegistroChofer from "./pages/auth/RegistroChofer";
 import AccesoChofer from "./pages/auth/AccesoChofer";
+import RegistroChequeador from "./pages/auth/RegistroChequeador";
+import AccesoChequeador from "./pages/auth/AccesoChequeador";
 
 import EstudianteDashboard from "./pages/student/EstudianteDashboard";
 import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
+import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 
 // --- IMPORTAR EL GUARDAESPALDAS ---
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -44,6 +47,9 @@ export default function App() {
           <Route path="/acceso-admin" element={<AccesoAdministracion />} />
           <Route path="/registro-chofer" element={<RegistroChofer />} />
           <Route path="/acceso-chofer" element={<AccesoChofer />} />
+          <Route path="/registro-chequeador" element={<RegistroChequeador />} />
+          <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
+
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
           <Route 
@@ -70,6 +76,15 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <DriverDashboard />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/dashboard-chequeador" 
+            element={
+              <ProtectedRoute>
+                <ChequeadorDashboard />
               </ProtectedRoute>
             } 
           />

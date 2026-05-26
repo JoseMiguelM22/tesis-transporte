@@ -30,7 +30,7 @@ export default function Home() {
     chequeador: {
       ruta: "/acceso-chequeador",
       textoBoton: "Ingresar como Chequeador",
-      colorBoton: "bg-purple-600 text-white hover:bg-purple-700",
+      colorBoton: "bg-slate-800 text-white hover:bg-slate-900",
     },
     administrador: {
       ruta: "/acceso-admin",
@@ -90,7 +90,7 @@ export default function Home() {
 
             <button 
               onClick={() => setRolSeleccionado("chequeador")}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all ${rolSeleccionado === "chequeador" ? "bg-purple-600 text-white shadow-lg scale-105" : "text-white/60 hover:text-white"}`}
+              className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all ${rolSeleccionado === "chequeador" ? "bg-slate-900 text-white shadow-lg scale-105" : "text-white/60 hover:text-white"}`}
             >
               <UserCheck size={16} /> Chequeador
             </button>
