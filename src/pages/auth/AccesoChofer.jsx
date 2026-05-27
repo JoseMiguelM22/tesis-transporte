@@ -72,29 +72,28 @@ export default function AccesoChofer() {
   };
 
   return (
-    <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center p-6 text-white font-sans text-left relative overflow-hidden">
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 text-white font-sans text-left relative overflow-hidden">
       
-      {/* Fondo decorativo blur */}
-      <div className="absolute inset-0 opacity-10 pointer-events-none">
-        <div className="absolute top-0 left-0 w-72 h-72 bg-white rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-300 rounded-full blur-3xl" />
+      {/* Fondo decorativo muy sutil para no perder la elegancia */}
+      <div className="absolute inset-0 opacity-20 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500 rounded-full blur-[120px]" />
       </div>
 
-      <div className="w-full max-w-md bg-[#0D47A1]/80 backdrop-blur-md p-10 rounded-[45px] shadow-2xl border border-white/10 relative z-10 animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-slate-800 p-10 rounded-[45px] shadow-2xl border border-slate-700 relative z-10 animate-in fade-in duration-300">
         
         {/* ENCABEZADO */}
         <div className="mb-8 text-center sm:text-left">
-          <div className="flex items-center gap-2 text-emerald-400 font-black text-[10px] uppercase tracking-widest mb-1 justify-center sm:justify-start">
+          <div className="flex items-center gap-2 text-blue-400 font-black text-[10px] uppercase tracking-widest mb-2 justify-center sm:justify-start">
             <Car size={14} /> Módulo de Operadores
           </div>
-          <h2 className="text-3xl font-black italic uppercase tracking-tighter leading-none">Ingreso Choferes</h2>
-          <p className="text-blue-200 text-xs mt-1 font-medium">Inicia sesión para gestionar el estado de tu unidad en la ruta.</p>
+          <h2 className="text-3xl font-black italic uppercase tracking-tighter leading-none text-white">Ingreso Choferes</h2>
+          <p className="text-slate-400 text-xs mt-2 font-medium">Inicia sesión para gestionar el estado de tu unidad en la ruta.</p>
         </div>
 
         {/* MENSAJE DE ERROR */}
         {errorMsg && (
-          <div className="mb-5 p-4 bg-red-500/20 border border-red-500/40 text-red-200 rounded-2xl flex gap-3 text-xs font-bold items-center animate-in shake duration-200">
-            <ShieldAlert size={20} className="shrink-0 text-red-400" />
+          <div className="mb-5 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl flex gap-3 text-xs font-bold items-center animate-in shake duration-200">
+            <ShieldAlert size={20} className="shrink-0" />
             <p>{errorMsg}</p>
           </div>
         )}
@@ -111,7 +110,7 @@ export default function AccesoChofer() {
               required
               value={formData.email} 
               onChange={handleChange}
-              className="w-full bg-white rounded-xl pl-11 pr-4 py-3.5 text-xs font-bold outline-none text-slate-800 focus:ring-2 focus:ring-emerald-500/30 shadow-inner"
+              className="w-full bg-white rounded-xl pl-11 pr-4 py-3.5 text-xs font-bold outline-none text-slate-800 focus:ring-2 focus:ring-blue-500/50 transition-all shadow-inner"
             />
           </div>
 
@@ -124,7 +123,7 @@ export default function AccesoChofer() {
               required
               value={formData.password} 
               onChange={handleChange}
-              className="w-full bg-white rounded-xl pl-11 pr-4 py-3.5 text-xs font-bold outline-none text-slate-800 focus:ring-2 focus:ring-emerald-500/30 shadow-inner"
+              className="w-full bg-white rounded-xl pl-11 pr-4 py-3.5 text-xs font-bold outline-none text-slate-800 focus:ring-2 focus:ring-blue-500/50 transition-all shadow-inner"
             />
           </div>
 
@@ -132,7 +131,7 @@ export default function AccesoChofer() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full mt-4 bg-emerald-500 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70"
+            className="w-full mt-4 bg-blue-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 active:scale-95 disabled:opacity-70 hover:bg-blue-700"
           >
             {loading ? (
               <Loader2 className="animate-spin" size={16} />
@@ -143,9 +142,9 @@ export default function AccesoChofer() {
         </form>
 
         {/* ENLACES EN PIE */}
-        <div className="mt-8 pt-4 border-t border-white/5 flex justify-between text-xs text-blue-200 font-bold uppercase tracking-wider">
-          <Link to="/" className="hover:text-white transition-colors">← Volver</Link>
-          <Link to="/registro-chofer" className="text-white border-b border-white/20 hover:border-white transition-all">Registrar Unidad</Link>
+        <div className="mt-8 pt-4 border-t border-slate-700 flex justify-between text-xs text-slate-400 font-bold uppercase tracking-wider">
+          <Link to="/" className="hover:text-slate-300 transition-colors">← Volver</Link>
+          <Link to="/registro-chofer" className="text-blue-400 hover:text-blue-300 transition-colors">Registrar Unidad</Link>
         </div>
 
       </div>
