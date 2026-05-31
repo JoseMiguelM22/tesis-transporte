@@ -18,6 +18,7 @@ import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
 import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 import EncuestaTransporte from "./pages/formulario/formulario";
+import PanelEncuestas from "./pages/formulario/PanelEncuestas"; // Ajusta la ruta a donde guardaste el archivo
 
 // --- IMPORTAR EL GUARDAESPALDAS ---
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -96,6 +97,17 @@ export default function App() {
               </ProtectedRoute>
             } 
           />
+
+          <Route 
+            path="/panel-encuestas" 
+            element={
+              <ProtectedRoute>
+                <PanelEncuestas />
+              </ProtectedRoute>
+            } 
+          />
+
+
 
           {/* 🔥 EL SALVAVIDAS: Si escriben una ruta mala, los manda a la encuesta directamente */}
           <Route path="*" element={<Navigate to="/formulario" replace />} />
