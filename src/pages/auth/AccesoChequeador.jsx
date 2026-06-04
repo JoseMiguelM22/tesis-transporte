@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft, UserCheck } from "lucide-react";
 import { supabase } from "../../lib/supabase.js";
 
 export default function LoginChequeador() {
@@ -49,60 +49,113 @@ export default function LoginChequeador() {
   };
 
   return (
-    // 🎨 CORRECCIÓN DE COLOR: bg-slate-800 y eliminación de círculos de fondo
-    <div className="min-h-screen bg-slate-800 flex items-center justify-center px-4 py-8 text-white relative overflow-hidden">
+    <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center p-4 font-sans relative overflow-hidden">
       
-      <div className="relative z-10 w-full max-w-md">
+      {/* Fondo decorativo sutil para darle profundidad */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none">
+        <div className="absolute top-0 left-0 w-96 h-96 bg-white rounded-full blur-[120px]" />
+      </div>
+
+      {/* TARJETA ESTILO GLASSMORPHISM */}
+      <div className="w-full max-w-sm bg-white/10 backdrop-blur-md rounded-[30px] border border-white/20 shadow-2xl p-8 relative z-10 animate-in fade-in duration-300 text-white">
+        
+        {/* BOTÓN VOLVER */}
+        <div className="mb-6">
+          <Link 
+            to="/" 
+            className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-colors text-xs font-medium"
+          >
+            <ArrowLeft className="w-4 h-4" /> Inicio
+          </Link>
+        </div>
+
+        {/* LOGOS / ICONOS SUPERIORES MÁS GRANDES */}
+        <div className="flex justify-center items-center gap-6 mb-8">
+          
+          {/* Logo UniRoute sin fondo blanco */}
+          <div className="w-24 h-24 flex items-center justify-center drop-shadow-xl">
+            <img 
+              src="/UniRoute.png" 
+              alt="UniRoute Logo" 
+              className="w-full h-full object-contain"
+            />
+          </div>
+
+          {/* Icono de Chequeador con fondo tipo cristal (igual que chofer) */}
+          <div className="w-20 h-20 rounded-[1.5rem] border border-white/20 bg-white/10 backdrop-blur-md flex items-center justify-center shadow-xl">
+            <UserCheck size={42} strokeWidth={2} className="text-white" />
+          </div>
+
+        </div>
+
+        {/* ENCABEZADO */}
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold mb-1">Iniciar sesión</h2>
+          <p className="text-white/70 text-xs">Accede como chequeador de línea.</p>
+        </div>
+
+        {/* MENSAJE DE ERROR */}
         {errorMsg && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border border-red-400 bg-red-500 px-4 py-3 text-sm font-medium shadow-lg">
-            <AlertCircle className="w-4 h-4" /> <span>{errorMsg}</span>
+          <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 text-red-100 rounded-xl flex gap-3 text-xs font-bold items-center animate-in shake duration-200">
+            <AlertCircle size={18} className="shrink-0 text-red-300" />
+            <p>{errorMsg}</p>
           </div>
         )}
 
-        <div className="backdrop-blur-xl bg-white/10 border border-white/15 rounded-[32px] shadow-2xl p-8">
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/10 shadow-xl bg-white flex items-center justify-center">
-              <img src="/logotrans.jpeg" alt="Logo" className="w-full h-full object-cover" />
-            </div>
-            <div className="w-24 h-24 rounded-3xl overflow-hidden border-4 border-white/10 shadow-xl bg-white p-2">
-              <img src="/imtt.jpeg" alt="IMTT" className="w-full h-full object-contain" />
-            </div>
+        {/* FORMULARIO DE INGRESO */}
+        <form onSubmit={handleLogin} className="space-y-4">
+          
+          <div className="relative">
+            <Mail className="absolute left-4 top-3.5 text-white/60 w-5 h-5" />
+            <input 
+              type="email" 
+              placeholder="Correo operativo" 
+              required 
+              value={email} 
+              onChange={(e) => setEmail(e.target.value)} 
+              className="w-full bg-transparent border border-white/30 rounded-xl pl-12 pr-4 py-3.5 text-sm outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
+            />
           </div>
 
-          <Link to="/" className="inline-flex items-center gap-1 text-xs text-slate-300 hover:text-white font-semibold mb-7">
-            <ArrowLeft className="w-4 h-4" /> Inicio del Sistema
-          </Link>
-
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-extrabold tracking-tight">Acceso Operador</h1>
-            <p className="text-sm text-slate-300 mt-2 font-medium">Punto de Control y Despacho de Línea.</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-5 text-left">
-            <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10">
-              <Mail className="w-5 h-5 mr-3 text-white/40" />
-              <input type="email" placeholder="Correo operativo" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-transparent outline-none text-sm placeholder:text-white/30" />
-            </div>
-
-            <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 focus-within:border-white/30 transition-all">
-              <Lock className="w-5 h-5 mr-3 text-white/40" />
-              <input type={showPassword ? "text" : "password"} placeholder="Clave Maestra" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-transparent outline-none text-sm" />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-white/40 hover:text-white">
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
-            </div>
-
-            {/* 🎨 Ajuste de color del botón a Slate en lugar de Púrpura */}
-            <button type="submit" disabled={loading} className="w-full rounded-2xl bg-white py-3.5 text-slate-800 font-black shadow-lg transition-all hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 text-xs uppercase tracking-widest">
-              {loading ? "Autenticando..." : "Ingresar a Parada"}
+          <div className="relative">
+            <Lock className="absolute left-4 top-3.5 text-white/60 w-5 h-5" />
+            <input 
+              type={showPassword ? "text" : "password"} 
+              placeholder="Clave Maestra" 
+              required 
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+              className="w-full bg-transparent border border-white/30 rounded-xl pl-12 pr-12 py-3.5 text-sm outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
+            />
+            <button 
+              type="button" 
+              onClick={() => setShowPassword(!showPassword)} 
+              className="absolute right-4 top-3.5 text-white/60 hover:text-white transition-colors"
+            >
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
-          </form>
+          </div>
 
-          <p className="text-center text-sm text-slate-300 mt-8 font-medium">
+          {/* BOTÓN DE ACCIÓN BLANCO */}
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full mt-4 bg-white text-[#1566D0] py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg hover:bg-blue-50 active:scale-[0.98] disabled:opacity-70 flex items-center justify-center gap-2"
+          >
+            {loading ? "Autenticando..." : "Ingresar a Parada"}
+          </button>
+        </form>
+
+        {/* ENLACES EN PIE */}
+        <div className="mt-6 text-center text-xs text-white/70">
+          <p>
             ¿No estás inscrito?{" "}
-            <Link to="/registro-chequeador" className="font-black text-white hover:underline underline-offset-4">Inscribirse</Link>
+            <Link to="/registro-chequeador" className="text-white font-bold hover:underline underline-offset-2">
+              Inscribirse
+            </Link>
           </p>
         </div>
+
       </div>
     </div>
   );

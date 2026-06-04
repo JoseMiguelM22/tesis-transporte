@@ -100,15 +100,30 @@ export default function Register() {
 
   return (
     <div className="min-h-screen bg-[#1566D0] flex items-center justify-center px-4 py-8 text-white relative overflow-hidden">
+      
+      {/* EFECTOS DE FONDO */}
+      <div className="absolute top-0 left-0 w-96 h-96 bg-blue-300/20 rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl" />
+
       {alert.msg && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border ${alert.type === "success" ? "bg-emerald-500 border-emerald-400" : "bg-red-500 border-red-400"} px-4 py-3 text-sm shadow-lg animate-in slide-in-from-top-4`}>
           <AlertCircle className="w-4 h-4" /> {alert.msg}
         </div>
       )}
 
-      <div className="relative z-10 w-full max-w-md backdrop-blur-xl bg-white/10 border border-white/15 rounded-[32px] p-8 shadow-2xl">
-        <Link to="/login" className="inline-flex items-center text-xs text-white/70 hover:text-white mb-6"><ArrowLeft className="w-4 h-4 mr-1" /> Volver</Link>
-        <h2 className="text-3xl font-extrabold text-center mb-6">Registro</h2>
+      <div className="relative z-10 w-full max-w-md backdrop-blur-xl bg-white/10 border border-white/15 rounded-[32px] p-8 shadow-2xl my-8">
+        <Link to="/acceso-estudiante" className="inline-flex items-center text-xs text-white/70 hover:text-white mb-6 transition-colors">
+          <ArrowLeft className="w-4 h-4 mr-1" /> Volver
+        </Link>
+        
+        {/* LOGO UNEFA FLOTANTE */}
+        <div className="flex justify-center mb-6">
+          <div className="w-24 h-24 flex items-center justify-center drop-shadow-2xl">
+            <img src="/logounefa.png" alt="Logo UNEFA" className="w-full h-full object-contain" />
+          </div>
+        </div>
+
+        <h2 className="text-3xl font-extrabold text-center mb-6 tracking-tight">Registro</h2>
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -122,10 +137,13 @@ export default function Register() {
           <div className="space-y-2">
             <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10 focus-within:border-white/40 transition-all">
               <Lock className="w-5 h-5 mr-3 opacity-40" />
-              <input type={showPassword ? "text" : "password"} name="password" placeholder="Contraseña" required value={formData.password} onChange={handleChange} className="bg-transparent w-full outline-none text-sm" maxLength={20}/>
-              <button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
+              <input type={showPassword ? "text" : "password"} name="password" placeholder="Contraseña" required value={formData.password} onChange={handleChange} className="bg-transparent w-full outline-none text-sm placeholder:text-white/60" maxLength={20}/>
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-white/40 hover:text-white transition-colors">
+                {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-1">
+            
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-1 bg-black/10 rounded-xl p-3 border border-white/5 mt-2">
               <CheckItem ok={validations.passwordLength} text="8 caracteres" />
               <CheckItem ok={validations.passwordUpper} text="Mayúscula" />
               <CheckItem ok={validations.passwordLower} text="Minúscula" />
@@ -133,7 +151,7 @@ export default function Register() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading} className="w-full bg-white text-[#1566D0] py-3 rounded-2xl font-bold mt-4 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50">
+          <button type="submit" disabled={loading} className="w-full bg-white text-[#1566D0] py-3.5 rounded-2xl font-bold mt-6 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 hover:bg-blue-50">
             {loading ? "VALIDANDO..." : "CREAR CUENTA"}
           </button>
         </form>

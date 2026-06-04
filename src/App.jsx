@@ -18,7 +18,6 @@ import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
 import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 import EncuestaTransporte from "./pages/formulario/formulario";
-import PanelEncuestas from "./pages/formulario/PanelEncuestas"; // Ajusta la ruta a donde guardaste el archivo
 
 // --- IMPORTAR EL GUARDAESPALDAS ---
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -42,13 +41,7 @@ export default function App() {
       <AuthListener>
         <Routes>
           {/* --- RUTAS PÚBLICAS --- */}
-          
-          {/* 🎯 MODO ENCUESTA: Redirige automáticamente al formulario */}
-          <Route path="/" element={<Navigate to="/formulario" replace />} />
-          
-          {/* ⚠️ Cuando termines tu tesis/encuestas, borra la línea de arriba y descomenta la de abajo */}
-          {/* <Route path="/" element={<Home />} /> */}
-
+          <Route path="/" element={<Home />} />
           <Route path="/acceso-estudiante" element={<AccesoEstudiante />} />
           <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
           <Route path="/reset-password" element={<ResetEstudiante />} />
@@ -59,6 +52,7 @@ export default function App() {
           <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
           <Route path="/formulario" element={<EncuestaTransporte />} />
           
+
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
           <Route 
@@ -98,19 +92,8 @@ export default function App() {
             } 
           />
 
-          <Route 
-            path="/panel-encuestas" 
-            element={
-              <ProtectedRoute>
-                <PanelEncuestas />
-              </ProtectedRoute>
-            } 
-          />
-
-
-
-          {/* 🔥 EL SALVAVIDAS: Si escriben una ruta mala, los manda a la encuesta directamente */}
-          <Route path="*" element={<Navigate to="/formulario" replace />} />
+          {/* 🔥 EL SALVAVIDAS: Si escriben una ruta mala, los manda al Home */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthListener>
     </Router>

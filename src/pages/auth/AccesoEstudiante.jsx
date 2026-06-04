@@ -87,19 +87,23 @@ export default function Login() {
 
       <div className="relative z-10 w-full max-w-md">
         {errorMsg && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border border-red-400 bg-red-500 px-4 py-3 text-sm font-medium shadow-lg">
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border border-red-400 bg-red-500 px-4 py-3 text-sm font-medium shadow-lg animate-in shake duration-200">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         <div className="backdrop-blur-xl bg-white/10 border border-white/15 rounded-[32px] shadow-2xl p-8">
-          <div className="flex items-center justify-center gap-4 mb-6">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white/10 shadow-xl bg-white">
-              <img src="/logotrans.jpeg" alt="Logo" className="w-full h-full object-cover" />
+          
+          {/* LOGOS FLOTANTES SIN FONDO */}
+          <div className="flex items-center justify-center gap-6 mb-6">
+            {/* LOGO UNIROUTE MÁS GRANDE */}
+            <div className="w-32 h-32 flex items-center justify-center drop-shadow-2xl">
+              <img src="/UniRoute.png" alt="Logo UniRoute" className="w-full h-full object-contain hover:scale-105 transition-transform duration-300" />
             </div>
-            <div className="w-24 h-24 rounded-3xl overflow-hidden border-4 border-white/10 shadow-xl bg-white p-2">
-              <img src="/imtt.jpeg" alt="IMTT" className="w-full h-full object-contain" />
+            {/* LOGO UNEFA */}
+            <div className="w-24 h-24 flex items-center justify-center drop-shadow-2xl">
+              <img src="/logounefa.png" alt="Logo UNEFA" className="w-full h-full object-contain" />
             </div>
           </div>
 
