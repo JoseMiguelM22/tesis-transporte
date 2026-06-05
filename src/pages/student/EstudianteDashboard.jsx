@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
-  LogOut, MapPin, Bell, Car, Menu, X, 
-  User, Camera, Check, Edit2, Loader2, ShieldCheck, CreditCard,
-  Image as ImageIcon, ArrowRight, AlertTriangle, FileText, CheckCircle, Clock
+  LogOut, Car, Menu, X, User, Camera, Check, Edit2, Loader2, 
+  CreditCard, Image as ImageIcon, ArrowRight, AlertTriangle, FileText, CheckCircle, Clock
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -18,19 +17,17 @@ export default function Dashboard() {
   // Estados de Interfaz y Navegación Interna
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [showKycOptionsModal, setShowKycOptionsModal] = useState(false); // Modal intermedio para KYC
+  const [showKycOptionsModal, setShowKycOptionsModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [loadingPagina, setLoadingPagina] = useState(true); 
-  const [showReportModal, setShowReportModal] = useState(false); 
-  const [vistaActiva, setVistaActiva] = useState("inicio"); // "inicio", "rutas", "alertas"
+  const [vistaActiva, setVistaActiva] = useState("inicio");
   
-  // Estados para el sistema de Reservas, KYC y Reportes
+  // Estados para el sistema de Reservas y KYC
   const [loadingReserva, setLoadingReserva] = useState(false);
-  const [enviandoReporte, setEnviandoReporte] = useState(false);
   const [showTicket, setShowTicket] = useState(false);
   const [ticketData, setTicketData] = useState(null);
   const [puestosA_Reservar, setPuestosA_Reservar] = useState(1); 
@@ -42,15 +39,18 @@ export default function Dashboard() {
   });
   const [tempData, setTempData] = useState({ nombre: "", apellido: "" });
   const [unidades, setUnidades] = useState([]);
-  const [misReportesEmitidos, setMisReportesEmitidos] = useState([]); 
   const [misReservasHistorial, setMisReservasHistorial] = useState([]); 
   const [selectedUnitId, setSelectedUnitId] = useState(null);
 
-  // --- LÓGICA DE FILTRADO ---
-  const unidadesDisponibles = unidades.filter(u => u.puestos_libres > 0 && u.estado !== 'fuera de servicio');
+  // --- 🔒 CANDADO ESTRICTO DE FILTRADO ---
+  // Solo muestra choferes verificados Y que estén actualmente "en ruta"
+  const unidadesDisponibles = unidades.filter(u => 
+    u.puestos_libres > 0 && 
+    u.estado?.toLowerCase() === 'en ruta' &&
+    u.kyc_verificado === true
+  );
 
   const proximaUnidad = unidadesDisponibles
-    .filter(u => u.estado !== 'en ruta')
     .sort((a, b) => (a.hora_salida > b.hora_salida ? 1 : -1))[0];
 
   const selectedUnit = selectedUnitId 
@@ -63,7 +63,6 @@ export default function Dashboard() {
       const idUsuario = await fetchUser();
       await fetchUnidades();
       if (idUsuario) {
-        await fetchMisReportes(idUsuario);
         await fetchMisReservas(idUsuario);
       }
       setLoadingPagina(false);
@@ -71,9 +70,10 @@ export default function Dashboard() {
 
     inicializarDashboard();
 
+    // SUSCRIPCIÓN A LA TABLA CHOFERES EN TIEMPO REAL
     const channel = supabase
       .channel('cambios-globales')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'unidades' }, 
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'choferes' }, 
         () => fetchUnidades()
       )
       .subscribe();
@@ -109,17 +109,8 @@ export default function Dashboard() {
   };
 
   const fetchUnidades = async () => {
-    const { data } = await supabase.from('unidades').select('*').order('numero_unidad', { ascending: true });
+    const { data } = await supabase.from('choferes').select('*').order('placa_vehiculo', { ascending: true });
     if (data) setUnidades(data);
-  };
-
-  const fetchMisReportes = async (userId) => {
-    const { data } = await supabase
-      .from('reportes_parada')
-      .select('*')
-      .eq('estudiante_id', userId)
-      .order('creado_at', { ascending: false });
-    if (data) setMisReportesEmitidos(data);
   };
 
   const fetchMisReservas = async (userId) => {
@@ -133,13 +124,13 @@ export default function Dashboard() {
       if (data && data.length > 0) {
         setMisReservasHistorial(data);
       } else {
-        // Datos Mock de respaldo para simulación en la exposición
+        // Mock data para demo inicial
         setMisReservasHistorial([
           {
             id: 1,
             creado_at: new Date().toISOString(),
             puestos: puestosA_Reservar || 1,
-            unidades: { numero_unidad: selectedUnit?.numero_unidad || "01", hora_salida: selectedUnit?.hora_salida || "05:15 PM" }
+            unidades: { numero_unidad: selectedUnit?.placa_vehiculo || "Asignando...", hora_salida: selectedUnit?.hora_salida || "--:--" }
           }
         ]);
       }
@@ -155,49 +146,33 @@ export default function Dashboard() {
     } catch (err) { navigate("/"); }
   };
 
-  const handleReporteParada = async (nombreParadaSeleccionada) => {
-    // 🔐 CANDADO EXTRA: Validamos de forma estricta en el controlador de la función
-    if (!userData.kyc_verificado) {
-      alert("ACCESO DENEGADO: Tu cuenta debe estar validada por el administrador para emitir alertas críticas al sistema.");
-      setShowReportModal(false);
-      return;
-    }
-
-    setEnviandoReporte(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const uuidEstudiante = session?.user?.id || userData.id;
-      const { error } = await supabase.from("reportes_parada").insert([{ estudiante_id: uuidEstudiante, parada_nombre: nombreParadaSeleccionada, activo: true }]);
-      if (error) throw error;
-      alert(`¡Reporte enviado para [${nombreParadaSeleccionada}]!`);
-      setShowReportModal(false);
-      await fetchMisReportes(uuidEstudiante); 
-    } catch (err) { alert(err.message); }
-    finally { setEnviandoReporte(false); }
-  };
-
   const handleReserva = async () => {
     if (!userData.kyc_verificado) { alert("Bloqueado por KYC."); return; }
     setLoadingReserva(true);
     try {
-      const { data: checkUnit } = await supabase.from('unidades').select('puestos_libres').eq('id', selectedUnit.id).single();
-      await supabase.from('unidades').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('id', selectedUnit.id);
-      try { await supabase.from('reservas').insert([{ estudiante_id: userData.id, unidad_id: selectedUnit.id, puestos: puestosA_Reservar }]); } catch(e){}
+      const { data: checkUnit } = await supabase.from('choferes').select('puestos_libres').eq('id', selectedUnit.id).single();
+      await supabase.from('choferes').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('id', selectedUnit.id);
+      
+      try { 
+        await supabase.from('unidades').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('numero_unidad', selectedUnit.placa_vehiculo);
+        await supabase.from('reservas').insert([{ estudiante_id: userData.id, unidad_id: selectedUnit.id, puestos: puestosA_Reservar }]); 
+      } catch(e){}
       
       const now = new Date();
       setTicketData({ 
-        unidad: selectedUnit.numero_unidad, 
+        unidad: selectedUnit.placa_vehiculo, 
         hora: selectedUnit.hora_salida || now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), 
         fecha: now.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }), 
         nombre: `${userData.nombre} ${userData.apellido}`, 
         puestos: puestosA_Reservar 
       });
-      setShowTicket(true); fetchUnidades(); fetchMisReservas(userData.id);
+      setShowTicket(true); 
+      fetchUnidades(); 
+      fetchMisReservas(userData.id);
     } catch (err) { alert(err.message); }
     finally { setLoadingReserva(false); }
   };
 
-  // --- LÓGICA DE FOTO Y CÁMARA MÚLTIPLE (AVATAR O CARNET) ---
   const handleUploadFile = async (file, bucketKey, updateField) => {
     if (!file) return;
     setUploading(true);
@@ -392,27 +367,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* REPORTE PARADA MODAL */}
-      {showReportModal && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => !enviandoReporte && setShowReportModal(false)}></div>
-          <div className="relative bg-[#0D47A1] text-white w-full max-w-sm rounded-[38px] shadow-2xl p-8 border border-white/10">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-2 text-orange-400"><AlertTriangle size={22} className="animate-pulse" /><h3 className="text-sm font-black uppercase tracking-wider">Ubicación del Reporte</h3></div>
-              <button disabled={enviandoReporte} onClick={() => setShowReportModal(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={16}/></button>
-            </div>
-            <div className="space-y-3">
-              <button disabled={enviandoReporte} onClick={() => handleReporteParada("Maraven - Centro")} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-left p-5 rounded-2xl flex items-center justify-between group transition-all">
-                <span className="text-xs font-black uppercase tracking-wide">Maraven - Centro</span><ArrowRight size={16} className="text-blue-400 group-hover:translate-x-1" />
-              </button>
-              <button disabled={enviandoReporte} onClick={() => handleReporteParada("Maraven - Punta Cardón")} className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-left p-5 rounded-2xl flex items-center justify-between group transition-all">
-                <span className="text-xs font-black uppercase tracking-wide">Maraven - Punta Cardón</span><ArrowRight size={16} className="text-blue-400 group-hover:translate-x-1" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* --- SIDEBAR DESPLEGABLE --- */}
       <div className={`fixed inset-y-0 left-0 w-80 bg-[#0D47A1] z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-500 flex flex-col p-8 shadow-2xl`}>
         <div className="flex justify-between items-center mb-6">
@@ -442,11 +396,10 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* NAVEGACIÓN SIDEBAR */}
+        {/* NAVEGACIÓN SIDEBAR LIMPIA */}
         <div className="flex-1 space-y-2">
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Car size={18} /> Panel Reservas</button>
           <button onClick={() => { setVistaActiva("rutas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "rutas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Car size={18} /> Mis Rutas (Histórico)</button>
-          <button onClick={() => { setVistaActiva("alertas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "alertas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Bell size={18} /> Alertas Emitidas</button>
         </div>
         
         <button onClick={handleLogout} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase border border-red-500/20 hover:bg-red-50 hover:text-white transition-all"><LogOut size={16} /> Salir del Sistema</button>
@@ -477,29 +430,11 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* 🔥 BOTÓN MODIFICADO: AHORA INCLUYE ESTILOS DE BLOQUEO SEGÚN VERIFICACIÓN */}
-            <button 
-              onClick={() => {
-                if (!userData.kyc_verificado) {
-                  alert("ACCESO RESTRINGIDO: Debes validar tu carnet de la UNEFA antes de enviar alertas críticas.");
-                } else {
-                  setShowReportModal(true);
-                }
-              }} 
-              className={`w-full mb-8 py-4 rounded-[25px] font-black text-[10px] uppercase flex items-center justify-center gap-3 transition-all shadow-md ${
-                !userData.kyc_verificado
-                  ? "bg-gray-500/20 border border-gray-500/30 text-gray-400 cursor-not-allowed opacity-50"
-                  : "bg-orange-500/20 border border-orange-500/50 text-orange-400 active:scale-95"
-              }`}
-            >
-              <AlertTriangle size={18} /> ¡Reportar Parada Llena!
-            </button>
-
             {selectedUnit ? (
               <div className="mb-8 bg-gradient-to-br from-[#2979FF] to-[#1566D0] rounded-[45px] p-9 shadow-2xl relative border border-white/10">
                  <Car className="absolute -right-6 -bottom-6 w-48 h-48 opacity-10 rotate-12" />
                  <div className="relative z-10 text-left">
-                    <h2 className="text-4xl font-black italic tracking-tighter mb-6 uppercase leading-none">UNIDAD {selectedUnit.numero_unidad}</h2>
+                    <h2 className="text-4xl font-black italic tracking-tighter mb-6 uppercase leading-none">UNIDAD {selectedUnit.placa_vehiculo || selectedUnit.numero_unidad}</h2>
                     <div className="flex gap-4">
                        <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Salida</p><p className="text-xl font-black italic">{selectedUnit.hora_salida}</p></div>
                        <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Disponibles</p><p className="text-xl font-black italic">{selectedUnit.puestos_libres} Asientos</p></div>
@@ -507,7 +442,7 @@ export default function Dashboard() {
                  </div>
               </div>
             ) : (
-              <div className="mb-8 text-center text-blue-300 opacity-70 p-6 border-2 border-dashed border-blue-400/30 rounded-[30px]"><p className="text-xs font-bold uppercase italic">No hay unidades disponibles</p></div>
+              <div className="mb-8 text-center text-blue-300 opacity-70 p-6 border-2 border-dashed border-blue-400/30 rounded-[30px]"><p className="text-xs font-bold uppercase italic">No hay unidades en ruta</p></div>
             )}
 
             <div className="space-y-4">
@@ -515,11 +450,11 @@ export default function Dashboard() {
               {unidadesDisponibles.length > 0 ? (
                 unidadesDisponibles.map(u => (
                   <div key={u.id} onClick={() => setSelectedUnitId(u.id)} className={`cursor-pointer transition-all duration-300 rounded-[30px] border-2 ${selectedUnitId === u.id || (selectedUnit?.id === u.id && !selectedUnitId) ? 'border-emerald-400 bg-[#1e40af] scale-[1.02]' : 'border-transparent opacity-70 hover:opacity-100'}`}>
-                    <VehicleCard nombre={`Unidad ${u.numero_unidad} (${u.capacidad_total || 5} puestos)`} puestos={u.puestos_libres} horaSalida={u.hora_salida || "Pendiente"} />
+                    <VehicleCard nombre={`Unidad ${u.placa_vehiculo || u.numero_unidad} (${u.capacidad_total || 5} puestos)`} puestos={u.puestos_libres} horaSalida={u.hora_salida || "Pendiente"} />
                   </div>
                 ))
               ) : (
-                <p className="text-center text-xs opacity-50 uppercase tracking-widest font-bold">No hay unidades en servicio operativo</p>
+                <p className="text-center text-xs opacity-50 uppercase tracking-widest font-bold">No hay choferes activos actualmente</p>
               )}
             </div>
           </>
@@ -544,33 +479,6 @@ export default function Dashboard() {
                 <div className="text-right text-[10px] font-bold text-white/60"><Clock size={12} className="inline mr-1 opacity-60"/>{new Date(res.creado_at).toLocaleDateString()}</div>
               </div>
             ))}
-          </div>
-        )}
-
-        {/* VISTA 3: ALERTAS EMITIDAS */}
-        {vistaActiva === "alertas" && (
-          <div className="space-y-5 animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center px-2">
-              <h2 className="text-xl font-black italic uppercase tracking-tight">Mis Alertas Emitidas</h2>
-              <button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-3 py-1.5 rounded-xl uppercase font-black">Volver</button>
-            </div>
-            {misReportesEmitidos.length > 0 ? (
-              misReportesEmitidos.map((rep) => (
-                <div key={rep.id} className="bg-[#0D47A1] p-6 rounded-[30px] border border-white/10 text-left shadow-2xl relative overflow-hidden">
-                  <div className="absolute right-0 top-0 h-full w-2 bg-gradient-to-b from-orange-400 to-transparent"></div>
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="bg-red-500/20 border border-red-500/30 text-red-300 font-black text-[9px] px-3 py-1 rounded-xl uppercase">📍 {rep.parada_nombre}</span>
-                    <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-xl ${rep.activo ? 'bg-orange-500 text-white animate-pulse' : 'bg-emerald-500 text-white'}`}>{rep.activo ? "En Espera" : "Atendido ✔"}</span>
-                  </div>
-                  <div className="flex justify-between items-center mt-4 pt-3 border-t border-white/5">
-                    <p className="text-[10px] text-blue-200 font-bold uppercase">Reporte N° 00{rep.id}</p>
-                    <p className="text-[9px] text-white/50 font-bold">{new Date(rep.creado_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="bg-white/5 border border-white/10 rounded-[35px] p-8 text-center"><Bell size={36} className="mx-auto text-blue-300 opacity-60 mb-3"/><p className="text-xs font-black uppercase italic">Sin reportes emitidos</p></div>
-            )}
           </div>
         )}
       </main>

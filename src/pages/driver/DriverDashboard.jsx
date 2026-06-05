@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 export default function DriverDashboard() {
   const navigate = useNavigate();
   const menuRef = useRef(null);
-  const sidebarRef = useRef(null); // 🎯 Referencia para detectar clics fuera del Sidebar
+  const sidebarRef = useRef(null); 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -22,14 +22,14 @@ export default function DriverDashboard() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [showKycModal, setShowKycModal] = useState(false); 
-  const [kycTypeActive, setKycTypeActive] = useState(""); // "cedula", "vehiculo", "rostro", "avatar"
+  const [kycTypeActive, setKycTypeActive] = useState(""); 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [uploading, setUploading] = useState(false); 
   const [showCamera, setShowCamera] = useState(false);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [loadingPagina, setLoadingPagina] = useState(true); 
-  const [vistaActiva, setVistaActiva] = useState("inicio"); // "inicio", "historico"
+  const [vistaActiva, setVistaActiva] = useState("inicio"); 
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   // Estados de Datos Unificados
@@ -51,21 +51,35 @@ export default function DriverDashboard() {
     inicializarDashboard();
 
     const manejarClicsExteriores = (e) => {
-      // 🎯 Cierre automático del menú desplegable superior
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuAbierto(false);
-      }
-      // 🎯 Cierre automático del Sidebar al hacer clic en cualquier lado fuera de él
-      if (sidebarRef.current && !sidebarRef.current.contains(e.target)) {
-        setIsMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuAbierto(false);
+      if (sidebarRef.current && !sidebarRef.current.contains(e.target)) setIsMenuOpen(false);
     };
 
     document.addEventListener("mousedown", manejarClicsExteriores);
     return () => document.removeEventListener("mousedown", manejarClicsExteriores);
   }, []);
 
-  // --- LOGICA DE CARGA DE DATOS ---
+  // 🔥 NUEVO: ESCUCHA EN TIEMPO REAL PARA RESTAR PUESTOS CUANDO EL ESTUDIANTE RESERVA 🔥
+  useEffect(() => {
+    if (!choferData?.placa_vehiculo) return;
+
+    const channel = supabase
+      .channel('sync-reservas-estudiantes')
+      .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'unidades', 
+          filter: `numero_unidad=eq.${choferData.placa_vehiculo}` 
+        }, 
+        (payload) => {
+          setChoferData(prev => ({ ...prev, puestos_libres: payload.new.puestos_libres }));
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [choferData?.placa_vehiculo]);
+
   const fetchChofer = async () => {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -100,16 +114,19 @@ export default function DriverDashboard() {
     } catch (err) { navigate("/"); }
   };
 
-  // --- CONTROLES OPERATIVOS DE RUTA ---
+  // --- CONTROLES OPERATIVOS DE RUTA CON SINCRONIZACIÓN BIFÁSICA ---
   const updatePuestos = async (nuevoValor) => {
     if (!choferData?.kyc_verificado) return;
     if (nuevoValor < 0 || nuevoValor > choferData.capacidad_total) return;
     
-    const { error } = await supabase
-      .from('choferes')
-      .update({ puestos_libres: nuevoValor })
-      .eq('id', choferData.id);
+    // 1. Actualiza perfil del chofer
+    const { error } = await supabase.from('choferes').update({ puestos_libres: nuevoValor }).eq('id', choferData.id);
       
+    // 2. 🔥 SINCRONIZA CON TABLA UNIDADES PARA LOS ESTUDIANTES 🔥
+    try {
+      await supabase.from('unidades').update({ puestos_libres: nuevoValor }).eq('numero_unidad', choferData.placa_vehiculo);
+    } catch (e) { console.error(e); }
+
     if (!error) setChoferData({ ...choferData, puestos_libres: nuevoValor });
   };
 
@@ -118,11 +135,33 @@ export default function DriverDashboard() {
     const nuevoEstado = choferData.estado === 'disponible' ? 'en ruta' : 'disponible';
     const nuevaHora = nuevoEstado === 'en ruta' ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
     
-    const { error } = await supabase
-      .from('choferes')
-      .update({ estado: nuevoEstado, hora_salida: nuevaHora })
-      .eq('id', choferData.id);
+    // 1. Actualiza perfil del chofer
+    const { error } = await supabase.from('choferes').update({ estado: nuevoEstado, hora_salida: nuevaHora }).eq('id', choferData.id);
       
+    // 2. 🔥 MAGIA: SINCRONIZA O CREA LA UNIDAD PARA QUE LOS ESTUDIANTES LA VEAN INMEDIATAMENTE 🔥
+    try {
+      const { data: unidadExistente } = await supabase.from('unidades').select('id').eq('numero_unidad', choferData.placa_vehiculo).maybeSingle();
+
+      if (unidadExistente) {
+        await supabase.from('unidades').update({
+          estado: nuevoEstado,
+          hora_salida: nuevaHora,
+          puestos_libres: choferData.puestos_libres,
+          capacidad_total: choferData.capacidad_total
+        }).eq('id', unidadExistente.id);
+      } else {
+        await supabase.from('unidades').insert([{
+          numero_unidad: choferData.placa_vehiculo,
+          capacidad_total: choferData.capacidad_total,
+          puestos_libres: choferData.puestos_libres,
+          hora_salida: nuevaHora,
+          estado: nuevoEstado
+        }]);
+      }
+    } catch(e) {
+      console.error("Error sincronizando unidades:", e);
+    }
+
     if (!error) setChoferData({ ...choferData, estado: nuevoEstado, hora_salida: nuevaHora });
   };
 
@@ -211,6 +250,15 @@ export default function DriverDashboard() {
   };
 
   const totalSubidos = [choferData?.kyc_cedula_url, choferData?.kyc_vehiculo_url, choferData?.kyc_rostro_url].filter(Boolean).length;
+
+  if (loadingPagina) {
+    return (
+      <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center text-white font-black italic gap-4">
+        <Loader2 className="animate-spin w-10 h-10" />
+        <span className="tracking-widest text-xs uppercase">Sincronizando Sistema...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
@@ -333,15 +381,13 @@ export default function DriverDashboard() {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 transition-opacity duration-300" />
       )}
 
-      {/* --- SIDEBAR DESPLEGABLE CHOFER (REFACTORIZADO CON CLIC AFUERA Y X VISIBLE) --- */}
+      {/* --- SIDEBAR DESPLEGABLE CHOFER --- */}
       <div 
-        ref={sidebarRef} // 🎯 Enganchamos la referencia del dom para el click exterior
+        ref={sidebarRef} 
         className={`fixed inset-y-0 left-0 w-80 bg-[#0D47A1] z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-500 flex flex-col p-8 shadow-2xl border-r border-white/5`}
       >
         <div className="flex justify-between items-center mb-6">
           <CreditCard size={20} className="text-blue-300" />
-          
-          {/* 🎯 CORRECCIÓN: Botón de la X estilizado con fondo claro para máxima visibilidad */}
           <button 
             onClick={() => setIsMenuOpen(false)} 
             className="p-2.5 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center"
@@ -385,7 +431,7 @@ export default function DriverDashboard() {
       <nav className="bg-white border-b border-slate-100 px-6 py-4 flex justify-between items-center relative z-30 shadow-sm text-slate-800">
         <button 
           onClick={(e) => {
-            e.stopPropagation(); // Evita que el click de apertura se confunda con un click afuera de cierre
+            e.stopPropagation(); 
             setIsMenuOpen(true);
           }} 
           className="bg-slate-100 p-2.5 rounded-xl border border-slate-200/50 hover:bg-slate-200 text-[#0D47A1] transition-colors flex items-center justify-center"
