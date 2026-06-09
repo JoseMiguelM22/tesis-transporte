@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, useNavigate, Navigate } from "react-router-dom";
 import { supabase } from "./lib/supabase";
 
-// --- IMPORTAR TUS VISTAS ---
 import Home from "./pages/auth/Home";
 import AccesoEstudiante from "./pages/auth/AccesoEstudiante";
 import RegistroEstudiante from "./pages/auth/RegistroEstudiante";
@@ -18,8 +17,8 @@ import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
 import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 import EncuestaTransporte from "./pages/formulario/formulario";
+import Cump from "./pages/Cump/Cump";
 
-// --- IMPORTAR EL GUARDAESPALDAS ---
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function AuthListener({ children }) {
@@ -37,10 +36,11 @@ function AuthListener({ children }) {
 
 export default function App() {
   return (
+    
     <Router>
       <AuthListener>
         <Routes>
-          {/* --- RUTAS PÚBLICAS --- */}
+          {/* RUTAS PÚBLICAS */}
           <Route path="/" element={<Home />} />
           <Route path="/acceso-estudiante" element={<AccesoEstudiante />} />
           <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
@@ -51,7 +51,7 @@ export default function App() {
           <Route path="/registro-chequeador" element={<RegistroChequeador />} />
           <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
           <Route path="/formulario" element={<EncuestaTransporte />} />
-          
+          <Route path="/cump" element={<Cump />} />
 
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}

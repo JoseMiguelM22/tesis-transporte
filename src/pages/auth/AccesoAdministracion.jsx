@@ -65,21 +65,18 @@ export default function LoginCentral() {
   return (
     <div className="min-h-screen bg-[#0a1d3d] flex items-center justify-center p-6 lg:p-12 font-sans relative overflow-hidden">
       
-      {/* Elementos decorativos de fondo principal */}
+      <div className="absolute top-0 left-0 w-full h-10 bg-transparent [-webkit-app-region:drag] z-50"></div>
+
       <div className="absolute top-[-10%] right-[-10%] w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
 
-      {/* CONTENEDOR PRINCIPAL - SPLIT LAYOUT PARA DESKTOP */}
       <div className="w-full max-w-6xl bg-slate-900 rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.4)] flex flex-col lg:flex-row overflow-hidden min-h-[650px] relative z-10 border border-slate-800">
         
-        {/* ================= COLUMNA IZQUIERDA: BRANDING ================= */}
         <div className="hidden lg:flex lg:w-5/12 bg-gradient-to-br from-[#0D47A1] to-[#1566D0] p-16 flex-col justify-between relative overflow-hidden text-white border-r border-blue-800/50">
           
-          {/* Elementos decorativos internos */}
           <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-white/10 rounded-full blur-3xl pointer-events-none" />
           <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-blue-400/20 rounded-full blur-3xl pointer-events-none" />
           
-          {/* Logos Claros */}
           <div className="flex items-center gap-8 relative z-10">
             <div className="w-32 h-32 flex items-center justify-center drop-shadow-2xl">
               <img src="/UniRoute.png" alt="UniRoute" className="w-full h-full object-contain" />
@@ -99,8 +96,7 @@ export default function LoginCentral() {
               <span className="font-light text-blue-200">Control Operativo</span>
             </h1>
             <p className="text-blue-100/90 text-sm font-medium leading-relaxed max-w-sm">
-              Acceso exclusivo para el personal administrativo y el equipo de monitoreo logístico. Toda la actividad dentro de este panel está siendo registrada y auditada.
-            </p>
+              Acceso exclusivo para el personal administrativo y el equipo de monitoreo logístico. Toda la actividad dentro de este panel está siendo registrada y auditada.</p>
           </div>
 
           <div className="relative z-10 flex items-center gap-2 opacity-50">

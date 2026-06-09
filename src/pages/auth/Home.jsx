@@ -40,12 +40,10 @@ export default function Home() {
 
       <div className="relative z-10">
         <section className="min-h-screen flex flex-col items-center justify-center px-6 py-12">
-          <div className="w-56 h-56 md:w-72 md:h-72 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,255,255,0.15)] border-2 border-white/30 mb-8 overflow-hidden">
-            <img
+          <div className="w-56 h-56 md:w-72 md:h-72 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center shadow-[0_0_60px_rgba(255,255,255,0.15)] border-2 border-white/30 mb-8 overflow-hidden"><img
               src="/UniRoute.png"
               alt="Logo Sistema de Transporte"
-              className="w-[85%] h-[85%] object-contain drop-shadow-2xl hover:scale-105 transition-transform duration-300"
-            />
+              className="w-[85%] h-[85%] object-contain drop-shadow-2xl hover:scale-105 transition-transform duration-300"/>
           </div>
 
           <div className="text-center max-w-2xl">

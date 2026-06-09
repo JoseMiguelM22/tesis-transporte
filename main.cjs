@@ -7,7 +7,7 @@ function createWindow () {
     height: 600, // Alto inicial
     minWidth: 900,
     minHeight: 600,
-    frame: false, // 🔥 AQUÍ QUITAMOS EL MARCO DE WINDOWS
+    frame: true, // 🔥 AQUÍ QUITAMOS EL MARCO DE WINDOWS
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false

@@ -116,7 +116,7 @@ const EncuestaTransporte = () => {
         <div className="bg-slate-850 border-b border-slate-700 p-8 sm:p-10 text-center flex flex-col items-center">
           
           <img 
-            src="/logoo.png" 
+            src="/logounefa.png" 
             alt="Logo UNEFA" 
             className="w-24 sm:w-28 h-auto mb-6 drop-shadow-xl"
           />
