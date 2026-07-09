@@ -35,7 +35,7 @@ export default function Dashboard() {
 
   // Estados de Datos
   const [userData, setUserData] = useState({ 
-    id: "", nombre: "", apellido: "", avatar_url: null, kyc_verificado: false, carnet_url: null 
+    id: "", nombre: "", apellido: "", avatar_url: null, kyc_verificado: false, carnet_url: null, cedula: "" 
   });
   const [tempData, setTempData] = useState({ nombre: "", apellido: "" });
   const [unidades, setUnidades] = useState([]);
@@ -43,7 +43,6 @@ export default function Dashboard() {
   const [selectedUnitId, setSelectedUnitId] = useState(null);
 
   // --- 🔒 CANDADO ESTRICTO DE FILTRADO ---
-  // Solo muestra choferes verificados Y que estén actualmente "en ruta"
   const unidadesDisponibles = unidades.filter(u => 
     u.puestos_libres > 0 && 
     u.estado?.toLowerCase() === 'en ruta' &&
@@ -60,10 +59,10 @@ export default function Dashboard() {
   useEffect(() => {
     const inicializarDashboard = async () => {
       setLoadingPagina(true);
-      const idUsuario = await fetchUser();
+      const usuario = await fetchUser();
       await fetchUnidades();
-      if (idUsuario) {
-        await fetchMisReservas(idUsuario);
+      if (usuario) {
+        await fetchMisReservas(`${usuario.nombre} ${usuario.apellido}`.trim());
       }
       setLoadingPagina(false);
     };
@@ -100,7 +99,7 @@ export default function Dashboard() {
       if (data) {
         setUserData(data);
         setTempData({ nombre: data.nombre, apellido: data.apellido });
-        return data.id;
+        return data;
       }
     } catch (err) {
       console.error("Error cargando sesión:", err.message);
@@ -113,18 +112,26 @@ export default function Dashboard() {
     if (data) setUnidades(data);
   };
 
-  const fetchMisReservas = async (userId) => {
+  const fetchMisReservas = async (nombreCompleto) => {
     try {
+      // 🔥 Ajustado para buscar las reservas por el nombre del estudiante y no romper el sistema
       const { data } = await supabase
         .from('reservas')
-        .select('*, unidades(numero_unidad, hora_salida)')
-        .eq('estudiante_id', userId)
-        .order('creado_at', { ascending: false });
+        .select('*')
+        .eq('nombre_estudiante', nombreCompleto)
+        .order('created_at', { ascending: false });
       
       if (data && data.length > 0) {
-        setMisReservasHistorial(data);
+        // Formateamos la data para la vista del historial
+        const formateado = data.map(res => ({
+          id: res.id,
+          creado_at: res.created_at,
+          puestos: 1,
+          unidades: { numero_unidad: res.placa_vehiculo, hora_salida: "--:--" }
+        }));
+        setMisReservasHistorial(formateado);
       } else {
-        // Mock data para demo inicial
+        // Datos iniciales de demostración
         setMisReservasHistorial([
           {
             id: 1,
@@ -134,7 +141,9 @@ export default function Dashboard() {
           }
         ]);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleLogout = async () => {
@@ -150,13 +159,21 @@ export default function Dashboard() {
     if (!userData.kyc_verificado) { alert("Bloqueado por KYC."); return; }
     setLoadingReserva(true);
     try {
+      // 1. Restar puestos al chofer
       const { data: checkUnit } = await supabase.from('choferes').select('puestos_libres').eq('id', selectedUnit.id).single();
       await supabase.from('choferes').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('id', selectedUnit.id);
       
-      try { 
-        await supabase.from('unidades').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('numero_unidad', selectedUnit.placa_vehiculo);
-        await supabase.from('reservas').insert([{ estudiante_id: userData.id, unidad_id: selectedUnit.id, puestos: puestosA_Reservar }]); 
-      } catch(e){}
+      // 2. Restar puestos en tabla de unidades
+      await supabase.from('unidades').update({ puestos_libres: checkUnit.puestos_libres - puestosA_Reservar }).eq('numero_unidad', selectedUnit.placa_vehiculo);
+      
+      // 3. 🔥 INSERTAR LOS DATOS EXACTOS EN LA TABLA RESERVAS PARA EL CHOFER 🔥
+      const { error: reservaError } = await supabase.from('reservas').insert([{ 
+        placa_vehiculo: selectedUnit.placa_vehiculo, 
+        nombre_estudiante: `${userData.nombre} ${userData.apellido}`.trim(),
+        cedula_estudiante: userData.cedula || "Unefista"
+      }]); 
+
+      if (reservaError) console.error(reservaError);
       
       const now = new Date();
       setTicketData({ 
@@ -166,10 +183,11 @@ export default function Dashboard() {
         nombre: `${userData.nombre} ${userData.apellido}`, 
         puestos: puestosA_Reservar 
       });
+      
       setShowTicket(true); 
       fetchUnidades(); 
-      fetchMisReservas(userData.id);
-    } catch (err) { alert(err.message); }
+      fetchMisReservas(`${userData.nombre} ${userData.apellido}`.trim());
+    } catch (err) { alert("Error: " + err.message); }
     finally { setLoadingReserva(false); }
   };
 
@@ -279,7 +297,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* MODAL SELECCIÓN KYC (TOMAR FOTO / GALERÍA) */}
+      {/* MODAL SELECCIÓN KYC */}
       {showKycOptionsModal && (
         <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => !subiendoCarnet && setShowKycOptionsModal(false)}></div>
@@ -399,7 +417,7 @@ export default function Dashboard() {
         {/* NAVEGACIÓN SIDEBAR LIMPIA */}
         <div className="flex-1 space-y-2">
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Car size={18} /> Panel Reservas</button>
-          <button onClick={() => { setVistaActiva("rutas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "rutas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Car size={18} /> Mis Rutas (Histórico)</button>
+          <button onClick={() => { setVistaActiva("rutas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "rutas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Clock size={18} /> Historial Abordajes</button>
         </div>
         
         <button onClick={handleLogout} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase border border-red-500/20 hover:bg-red-50 hover:text-white transition-all"><LogOut size={16} /> Salir del Sistema</button>

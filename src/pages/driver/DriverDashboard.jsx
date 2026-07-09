@@ -4,7 +4,7 @@ import {
   ShieldCheck, CreditCard, Image as ImageIcon, ArrowRight, 
   AlertTriangle, FileText, CheckCircle, Clock, Smile, ChevronDown, 
   LayoutDashboard, Settings, Navigation, MinusCircle, PlusCircle,
-  ShieldAlert, CheckCircle2, Power
+  ShieldAlert, CheckCircle2, Power, Users, MessageSquare
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -32,6 +32,11 @@ export default function DriverDashboard() {
   const [vistaActiva, setVistaActiva] = useState("inicio"); 
   const [menuAbierto, setMenuAbierto] = useState(false);
 
+  // 🔥 NUEVOS ESTADOS PARA REPORTES
+  const [showReporteModal, setShowReporteModal] = useState(false);
+  const [enviandoReporte, setEnviandoReporte] = useState(false);
+  const [reporteData, setReporteData] = useState({ tipo: "Suministro de Gasolina", mensaje: "" });
+
   // Estados de Datos Unificados
   const [choferData, setChoferData] = useState({ 
     id: "", nombre: "", apellido: "", avatar_url: null, cedula: "", telefono: "",
@@ -40,8 +45,9 @@ export default function DriverDashboard() {
     puestos_libres: 4, estado: "disponible", hora_salida: null 
   });
   const [tempData, setTempData] = useState({ nombre: "", apellido: "" });
+  
+  const [reservasActivas, setReservasActivas] = useState([]);
 
-  // Sincronización inicial y escuchas de clics exteriores
   useEffect(() => {
     const inicializarDashboard = async () => {
       setLoadingPagina(true);
@@ -59,11 +65,21 @@ export default function DriverDashboard() {
     return () => document.removeEventListener("mousedown", manejarClicsExteriores);
   }, []);
 
-  // 🔥 NUEVO: ESCUCHA EN TIEMPO REAL PARA RESTAR PUESTOS CUANDO EL ESTUDIANTE RESERVA 🔥
   useEffect(() => {
     if (!choferData?.placa_vehiculo) return;
 
-    const channel = supabase
+    const fetchReservas = async () => {
+      const { data } = await supabase
+        .from('reservas') 
+        .select('*')
+        .eq('placa_vehiculo', choferData.placa_vehiculo)
+        .order('created_at', { ascending: false });
+      
+      if (data) setReservasActivas(data);
+    };
+    fetchReservas();
+
+    const channelPuestos = supabase
       .channel('sync-reservas-estudiantes')
       .on('postgres_changes', { 
           event: 'UPDATE', 
@@ -77,7 +93,24 @@ export default function DriverDashboard() {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    const channelHistorial = supabase
+      .channel('sync-historial-reservas')
+      .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'reservas', 
+          filter: `placa_vehiculo=eq.${choferData.placa_vehiculo}` 
+        }, 
+        (payload) => {
+          setReservasActivas(prev => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(channelPuestos); 
+      supabase.removeChannel(channelHistorial); 
+    };
   }, [choferData?.placa_vehiculo]);
 
   const fetchChofer = async () => {
@@ -114,15 +147,12 @@ export default function DriverDashboard() {
     } catch (err) { navigate("/"); }
   };
 
-  // --- CONTROLES OPERATIVOS DE RUTA CON SINCRONIZACIÓN BIFÁSICA ---
   const updatePuestos = async (nuevoValor) => {
     if (!choferData?.kyc_verificado) return;
     if (nuevoValor < 0 || nuevoValor > choferData.capacidad_total) return;
     
-    // 1. Actualiza perfil del chofer
     const { error } = await supabase.from('choferes').update({ puestos_libres: nuevoValor }).eq('id', choferData.id);
       
-    // 2. 🔥 SINCRONIZA CON TABLA UNIDADES PARA LOS ESTUDIANTES 🔥
     try {
       await supabase.from('unidades').update({ puestos_libres: nuevoValor }).eq('numero_unidad', choferData.placa_vehiculo);
     } catch (e) { console.error(e); }
@@ -135,10 +165,8 @@ export default function DriverDashboard() {
     const nuevoEstado = choferData.estado === 'disponible' ? 'en ruta' : 'disponible';
     const nuevaHora = nuevoEstado === 'en ruta' ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
     
-    // 1. Actualiza perfil del chofer
     const { error } = await supabase.from('choferes').update({ estado: nuevoEstado, hora_salida: nuevaHora }).eq('id', choferData.id);
       
-    // 2. 🔥 MAGIA: SINCRONIZA O CREA LA UNIDAD PARA QUE LOS ESTUDIANTES LA VEAN INMEDIATAMENTE 🔥
     try {
       const { data: unidadExistente } = await supabase.from('unidades').select('id').eq('numero_unidad', choferData.placa_vehiculo).maybeSingle();
 
@@ -165,7 +193,40 @@ export default function DriverDashboard() {
     if (!error) setChoferData({ ...choferData, estado: nuevoEstado, hora_salida: nuevaHora });
   };
 
-  // --- SISTEMA DE TRIPLE CARGA DE ARCHIVOS KYC ---
+  // 🔥 NUEVA FUNCIÓN: ELIMINA AL ESTUDIANTE DE LA LISTA AL SUBIR AL BUS
+  const marcarComoAbordado = async (reservaId) => {
+    try {
+      // Borramos de la BD para limpiar la lista
+      await supabase.from('reservas').delete().eq('id', reservaId);
+      // Borramos del estado visual al instante
+      setReservasActivas(prev => prev.filter(r => r.id !== reservaId));
+    } catch(e) {
+      console.error("Error al marcar como abordado", e);
+    }
+  };
+
+  // 🔥 NUEVA FUNCIÓN: ENVÍA REPORTE AL CHEQUEADOR
+  const enviarReporteOperativo = async () => {
+    setEnviandoReporte(true);
+    try {
+      const { error } = await supabase.from('reportes_operativos').insert([{
+        placa_vehiculo: choferData.placa_vehiculo,
+        tipo_reporte: reporteData.tipo,
+        mensaje: reporteData.mensaje,
+        emisor: `${choferData.nombre} ${choferData.apellido}`
+      }]);
+      if (error) throw error;
+      
+      alert("¡Reporte de incidencia enviado con éxito al chequeador!");
+      setShowReporteModal(false);
+      setReporteData({ tipo: "Suministro de Gasolina", mensaje: "" });
+    } catch (err) {
+      alert("Hubo un error enviando el reporte: " + err.message);
+    } finally {
+      setEnviandoReporte(false);
+    }
+  };
+
   const handleUploadFile = async (file, bucketKey, updateField) => {
     if (!file) return;
     setUploading(true);
@@ -199,7 +260,6 @@ export default function DriverDashboard() {
     }
   };
 
-  // --- CONTROLADOR DE CÁMARA NATIVA ---
   const startCamera = async () => {
     setShowPhotoOptions(false);
     setShowCamera(true);
@@ -263,6 +323,55 @@ export default function DriverDashboard() {
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
       
+      {/* --- MODAL DE REPORTES INCIDENCIAS --- */}
+      {showReporteModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => setShowReporteModal(false)}></div>
+          <div className="relative bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200 text-left">
+            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="text-orange-500" size={24} />
+                <h3 className="text-lg font-black italic uppercase leading-none">Reporte Operativo</h3>
+              </div>
+              <button onClick={() => setShowReporteModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-blue-400">Tipo de Incidencia</label>
+                <select 
+                  value={reporteData.tipo} 
+                  onChange={e => setReporteData({...reporteData, tipo: e.target.value})}
+                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-1 focus:ring-2 focus:ring-orange-500 outline-none"
+                >
+                  <option value="Suministro de Gasolina">⛽ Suministro de Gasolina</option>
+                  <option value="Falla Mecánica">🔧 Falla Mecánica</option>
+                  <option value="Retraso en Vía">🚦 Retraso / Tráfico Pesado</option>
+                  <option value="Incidencia con Pasajero">⚠️ Incidencia con Pasajero</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black uppercase text-blue-400">Detalles adicionales</label>
+                <textarea 
+                  value={reporteData.mensaje}
+                  onChange={e => setReporteData({...reporteData, mensaje: e.target.value})}
+                  rows="3"
+                  placeholder="Ej: Estoy en la bomba Maraven, demoro 40 minutos..."
+                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-1 resize-none focus:ring-2 focus:ring-orange-500 outline-none"
+                ></textarea>
+              </div>
+              <button 
+                onClick={enviarReporteOperativo} 
+                disabled={enviandoReporte || !reporteData.mensaje}
+                className="w-full bg-orange-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50"
+              >
+                {enviandoReporte ? <Loader2 className="animate-spin mx-auto" /> : "Enviar al Chequeador"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CÁMARA EN VIVO */}
       {showCamera && (
         <div className="fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center p-6">
@@ -418,9 +527,15 @@ export default function DriverDashboard() {
           )}
         </div>
 
-        {/* ENLACES PRIVADOS */}
+        {/* ENLACES PRIVADOS SIDEBAR */}
         <div className="flex-1 space-y-2">
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><LayoutDashboard size={18} /> Controles de Ruta</button>
+          
+          <button onClick={() => { setVistaActiva("reservas"); setIsMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "reservas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
+            <div className="flex items-center gap-4"><Users size={18} /> Pasajeros A Bordo</div>
+            {reservasActivas.length > 0 && <span className="bg-orange-500 text-white px-2 py-0.5 rounded-full">{reservasActivas.length}</span>}
+          </button>
+          
           <button onClick={() => { setVistaActiva("historico"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "historico" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Clock size={18} /> Historial de Trayectos</button>
         </div>
         
@@ -444,12 +559,14 @@ export default function DriverDashboard() {
             onClick={() => setMenuAbierto(!menuAbierto)}
             className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-full font-bold text-xs uppercase tracking-wider text-slate-700 transition-all active:scale-95 select-none"
           >
-            <div className="w-5 h-5 bg-[#0D47A1] text-white text-[10px] rounded-full flex items-center justify-center font-black overflow-hidden">
+            <div className="w-5 h-5 bg-[#0D47A1] text-white text-[10px] rounded-full flex items-center justify-center font-black overflow-hidden relative">
               {choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : choferData?.nombre ? choferData.nombre[0].toUpperCase() : "U"}
+              {reservasActivas.length > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>}
             </div>
             Hola, {choferData?.nombre ? choferData.nombre.split(" ")[0] : "Operador"} <ChevronDown size={14} className={`transition-transform duration-200 ${menuAbierto ? 'rotate-180' : ''}`} />
           </button>
 
+          {/* MENU DESPLEGABLE SUPERIOR */}
           {menuAbierto && (
             <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 animate-in fade-in slide-in-from-top-3 duration-200 z-50">
               <div className="px-3 py-2 border-b border-slate-50 text-left">
@@ -461,6 +578,12 @@ export default function DriverDashboard() {
                 <button onClick={() => { setVistaActiva("inicio"); setMenuAbierto(false); }} className="w-full flex items-center gap-3 text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
                   <LayoutDashboard size={14} className="text-slate-400" /> Mi Panel
                 </button>
+                
+                <button onClick={() => { setVistaActiva("reservas"); setMenuAbierto(false); }} className="w-full flex items-center justify-between text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
+                  <div className="flex items-center gap-3"><Users size={14} className="text-slate-400" /> Pasajeros a bordo</div>
+                  {reservasActivas.length > 0 && <span className="bg-orange-100 text-orange-600 text-[9px] px-2 py-0.5 rounded-full font-black">{reservasActivas.length}</span>}
+                </button>
+
                 <button onClick={() => { setIsProfileModalOpen(true); setMenuAbierto(false); }} className="w-full flex items-center gap-3 text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
                   <Settings size={14} className="text-slate-400" /> Configuración
                 </button>
@@ -493,7 +616,6 @@ export default function DriverDashboard() {
               </div>
             </div>
 
-            {/* BARRA DE SEGUIMIENTO */}
             <div className="bg-[#0D47A1] border border-white/10 rounded-3xl p-5 space-y-2">
               <div className="flex justify-between text-[10px] font-black uppercase tracking-wider text-blue-200">
                 <span>Fotografías Reglamentarias</span>
@@ -504,9 +626,7 @@ export default function DriverDashboard() {
               </div>
             </div>
 
-            {/* REQUISITOS UNO POR UNO */}
             <div className="space-y-3">
-              {/* 1. CEDULA */}
               <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-2xl ${choferData?.kyc_cedula_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><FileText size={20} /></div>
@@ -515,7 +635,6 @@ export default function DriverDashboard() {
                 {choferData?.kyc_cedula_url ? <CheckCircle size={20} className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("cedula"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}
               </div>
 
-              {/* 2. CARRO Y PLACA */}
               <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-2xl ${choferData?.kyc_vehiculo_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><Car size={20} /></div>
@@ -524,7 +643,6 @@ export default function DriverDashboard() {
                 {choferData?.kyc_vehiculo_url ? <CheckCircle size={20} className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("vehiculo"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}
               </div>
 
-              {/* 3. ROSTRO */}
               <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className={`p-3 rounded-2xl ${choferData?.kyc_rostro_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><Smile size={20} /></div>
@@ -545,7 +663,6 @@ export default function DriverDashboard() {
           <>
             {vistaActiva === "inicio" && (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-300">
-                {/* INTERFAZ DEL VEHICULO ACTIVO */}
                 <div className={`bg-gradient-to-br ${choferData?.estado === 'en ruta' ? 'from-orange-500 to-red-600' : 'from-[#2979FF] to-[#1566D0]'} rounded-[45px] p-9 shadow-2xl relative border border-white/10 transition-colors duration-500 text-left`}>
                   <Car className="absolute -right-6 -bottom-6 w-48 h-48 opacity-10 rotate-12" />
                   <div className="relative z-10">
@@ -558,7 +675,6 @@ export default function DriverDashboard() {
                   </div>
                 </div>
 
-                {/* CARD SELECTOR DE PASAJEROS */}
                 <div className="bg-white text-[#0D47A1] rounded-[40px] p-8 shadow-2xl flex flex-col items-center">
                   <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-4">Puestos Libres Disponibles</p>
                   <div className="flex items-center gap-8 mb-4">
@@ -573,6 +689,64 @@ export default function DriverDashboard() {
                     <div className="h-full bg-[#0D47A1] transition-all duration-500" style={{ width: `${(choferData?.puestos_libres / choferData?.capacidad_total) * 100}%` }}></div>
                   </div>
                 </div>
+
+                {/* 🔥 BOTÓN PARA REPORTAR INCIDENCIAS */}
+                <button 
+                  onClick={() => setShowReporteModal(true)} 
+                  className="w-full bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 text-orange-400 rounded-[30px] p-5 shadow-sm flex items-center justify-between transition-all active:scale-95"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-orange-500/20 p-3 rounded-2xl"><AlertTriangle size={24} /></div>
+                    <div className="text-left">
+                      <h4 className="text-sm font-black uppercase">Reportar Incidencia</h4>
+                      <p className="text-[10px] font-bold opacity-80">Gasolina, averías, retrasos</p>
+                    </div>
+                  </div>
+                  <ArrowRight size={20} />
+                </button>
+              </div>
+            )}
+
+            {/* 🔥 VISTA: LISTA DE ESTUDIANTES RESERVADOS CON BOTÓN ABORDÓ 🔥 */}
+            {vistaActiva === "reservas" && (
+              <div className="space-y-4 animate-in slide-in-from-bottom duration-300 text-left">
+                <div className="flex justify-between items-center px-2">
+                  <h2 className="text-xl font-black italic uppercase tracking-tight">Pasajeros a Bordo</h2>
+                  <button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-3 py-1.5 rounded-xl uppercase font-black hover:bg-white/20">Volver</button>
+                </div>
+                
+                {reservasActivas.length === 0 ? (
+                  <div className="bg-white/5 p-8 rounded-[30px] border border-white/10 text-center text-blue-200 mt-6 shadow-inner">
+                    <Users size={48} className="mx-auto mb-4 opacity-50" />
+                    <p className="text-sm font-bold uppercase tracking-widest">Sin reservas pendientes</p>
+                    <p className="text-[10px] mt-2 opacity-70">Los estudiantes que reserven su cupo aparecerán aquí en tiempo real.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 mt-4">
+                    {reservasActivas.map((reserva, idx) => (
+                      <div key={idx} className="bg-white p-5 rounded-[24px] shadow-xl flex items-center justify-between text-[#0D47A1] animate-in fade-in duration-300">
+                        <div className="flex items-center gap-4">
+                          <div className="bg-blue-100 p-3 rounded-full text-blue-600"><User size={20}/></div>
+                          <div>
+                            <p className="text-sm font-black uppercase leading-tight">{reserva.nombre_estudiante || "Estudiante Unefista"}</p>
+                            <p className="text-[10px] font-bold text-slate-400">C.I: {reserva.cedula_estudiante || "N/A"}</p>
+                            <p className="text-[10px] font-black text-orange-500 uppercase mt-1">
+                              Asientos reservados: {reserva.puestos || 1}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <button 
+                            onClick={() => marcarComoAbordado(reserva.id)}
+                            className="bg-emerald-100 text-emerald-600 hover:bg-emerald-500 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1"
+                          >
+                            <CheckCircle2 size={14} /> Abordó
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

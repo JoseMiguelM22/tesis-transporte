@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, Car, Users, Power, RefreshCw, Edit3, CheckCircle2, 
   X, ShieldCheck, Trash2, UserCog, Save, Loader2, 
-  Eye, AlertTriangle, Send, ShieldAlert, Search, FileText, Smile, Check, MapPin, Fuel, Menu
+  Eye, AlertTriangle, Send, ShieldAlert, Search, FileText, Smile, Check, MapPin, Fuel, Menu, Wrench, Clock
 } from "lucide-react";
 
 export default function AdminDashboard() {
@@ -12,7 +12,7 @@ export default function AdminDashboard() {
   const sidebarRef = useRef(null);
   
   // --- ESTADOS DE CONTROL DE INTERFAZ ---
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // 🎯 NUEVO: Control del Menú Desplegable
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState("flota"); 
   const [subTabKyc, setSubTabKyc] = useState("estudiantes"); 
   const [filtroChoferEstatus, setFiltroChoferEstatus] = useState("pendientes"); 
@@ -34,21 +34,24 @@ export default function AdminDashboard() {
   const [estudiantes, setEstudiantes] = useState([]); 
   const [chequeadores, setChequeadores] = useState([]); 
   const [alertasParadas, setAlertasParadas] = useState([]); 
+  const [reportesChoferes, setReportesChoferes] = useState([]); // 🔥 NUEVO ESTADO PARA REPORTES
   const [editData, setEditData] = useState(null);
 
   const cargarDatos = async () => {
     setLoading(true);
     try {
-      const [chRes, estRes, repRes, cheqRes] = await Promise.all([
+      const [chRes, estRes, repRes, cheqRes, opRes] = await Promise.all([
         supabase.from("choferes").select("*").order("apellido", { ascending: true }),
         supabase.from("perfiles").select("*").eq("rol", "estudiante").order("apellido", { ascending: true }),
         supabase.from("alertas_paradas").select("id, parada_nombre, creado_at, chequeadores(nombre, apellido, cedula)").eq("estado", "activa").order("creado_at", { ascending: false }),
-        supabase.from("chequeadores").select("*").order("apellido", { ascending: true }) 
+        supabase.from("chequeadores").select("*").order("apellido", { ascending: true }),
+        supabase.from("reportes_operativos").select("*").order("created_at", { ascending: false }) // 🔥 FETCH REPORTES
       ]);
       setChoferes(chRes.data || []);
       setEstudiantes(estRes.data || []);
       setAlertasParadas(repRes.data || []);
       setChequeadores(cheqRes.data || []);
+      setReportesChoferes(opRes.data || []);
     } catch (e) { console.error("Error de sincronización:", e.message); }
     setLoading(false);
   };
@@ -56,7 +59,21 @@ export default function AdminDashboard() {
   useEffect(() => { 
     cargarDatos(); 
     const intervalo = setInterval(() => { cargarDatos(); }, 15000);
-    return () => clearInterval(intervalo);
+
+    // 📡 ESCUCHA EN TIEMPO REAL: Reportes de Choferes
+    const channelChoferes = supabase
+      .channel('admin-sync-reportes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reportes_operativos' }, 
+        (payload) => {
+          setReportesChoferes(prev => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(intervalo);
+      supabase.removeChannel(channelChoferes);
+    };
   }, []);
 
   // --- CONTROLADORES ACCIONES LOGÍSTICAS ---
@@ -99,6 +116,16 @@ export default function AdminDashboard() {
     if (window.confirm("¿Eliminar operador permanentemente de la bitácora?")) {
       await supabase.from("choferes").delete().eq("id", id);
       await cargarDatos();
+    }
+  };
+
+  const handleMarcarReporteResuelto = async (id) => {
+    try {
+      await supabase.from('reportes_operativos').delete().eq('id', id);
+      setReportesChoferes(prev => prev.filter(r => r.id !== id));
+      alert("Reporte marcado como solucionado y archivado.");
+    } catch (error) {
+      alert("Error gestionando el reporte: " + error.message);
     }
   };
 
@@ -151,20 +178,35 @@ export default function AdminDashboard() {
   
   const totalNotificacionesKyc = estudiantesPorValidar + pendientesChof + pendientesCheq;
 
+  // --- FUNCIONES SEGURAS DE FECHA ---
+  const safeTime = (dateStr) => {
+    if (!dateStr) return "--:--";
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex font-sans text-slate-900 overflow-hidden text-left relative">
       
       {/* 🎯 SIDEBAR DESPLEGABLE */}
       <aside 
         ref={sidebarRef} 
-        className={`bg-[#0D47A1] text-white shrink-0 shadow-2xl z-30 transition-all duration-300 ease-in-out overflow-hidden ${isSidebarOpen ? 'w-72' : 'w-0'}`}
+        className={`bg-[#0D47A1] text-white shrink-0 shadow-2xl z-30 transition-all duration-300 ease-in-out overflow-hidden flex flex-col ${isSidebarOpen ? 'w-72' : 'w-0'}`}
       >
         <div className="w-72 flex flex-col h-full">
-          <div className="p-10 flex items-center gap-3 italic select-none">
-            <Car size={32} className="text-blue-400" />
-            <h2 className="text-2xl font-black uppercase tracking-tighter">RUTA<span className="font-light text-blue-300">UNEFA</span></h2>
+          
+          {/* 🔥 ESPACIO PARA EL LOGO UNIROUTE 🔥 */}
+          <div className="p-8 flex justify-center items-center select-none border-b border-white/5">
+           
+            { <img src="/UniRoute.png" alt="UniRoute Logo" className="h-16 w-auto object-contain" />}
+            
+            {/* Si aún no tienes la imagen cargada, se mostrará este texto temporal: */}
+            <div className="flex items-center gap-3 italic">
+              <h2 className="text-2xl font-black uppercase tracking-tighter">RUTA<span className="font-light text-blue-300">UNEFA</span></h2>
+            </div>
           </div>
-          <nav className="flex-1 px-6 space-y-3">
+          
+          <nav className="flex-1 px-6 space-y-3 mt-6">
             <button onClick={() => setActiveTab("flota")} className={`flex items-center gap-4 w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "flota" ? 'bg-white/10 shadow-lg border-l-4 border-blue-400' : 'opacity-60 hover:opacity-100'}`}><LayoutDashboard size={20}/> Monitoreo de Línea</button>
             <button onClick={() => setActiveTab("kyc")} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "kyc" ? 'bg-white/10 shadow-lg border-l-4 border-blue-400' : 'opacity-60 hover:opacity-100'}`}>
               <div className="flex items-center gap-4"><Users size={20}/> Auditoría KYC</div>
@@ -172,11 +214,17 @@ export default function AdminDashboard() {
             </button>
             <button onClick={() => setActiveTab("alertas")} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "alertas" ? 'bg-white/10 shadow-lg border-l-4 border-red-400' : 'opacity-60 hover:opacity-100'}`}>
               <div className="flex items-center gap-4"><AlertTriangle size={20} className={alertasParadas.length > 0 ? "text-red-400" : ""} /> Alertas Chequeador</div>
-              {alertasParadas.length > 0 && <span className="bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-full">{alertasParadas.length}</span>}
+              {alertasParadas.length > 0 && <span className="bg-red-500 text-white font-bold text-xs px-2.5 py-1 rounded-full animate-pulse">{alertasParadas.length}</span>}
+            </button>
+            {/* 🔥 NUEVA PESTAÑA: REPORTES CHOFERES */}
+            <button onClick={() => setActiveTab("reportes")} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black italic transition-all ${activeTab === "reportes" ? 'bg-white/10 shadow-lg border-l-4 border-orange-400' : 'opacity-60 hover:opacity-100'}`}>
+              <div className="flex items-center gap-4"><Wrench size={20} className={reportesChoferes.length > 0 ? "text-orange-400" : ""} /> Reportes Operativos</div>
+              {reportesChoferes.length > 0 && <span className="bg-orange-500 text-white font-bold text-xs px-2.5 py-1 rounded-full">{reportesChoferes.length}</span>}
             </button>
           </nav>
+          
           <div className="p-10 border-t border-white/5">
-            <button onClick={() => { supabase.auth.signOut(); navigate("/acceso-admin"); }} className="flex items-center gap-3 text-white/50 hover:text-white font-bold italic uppercase text-xs transition-all"><Power size={16}/> Cerrar Sesión</button>
+            <button onClick={() => { supabase.auth.signOut(); navigate("/acceso-admin"); }} className="flex items-center gap-3 text-white/50 hover:text-white font-bold italic uppercase text-xs transition-all"><Power size={16}/> Cerrar Sesión Administrador</button>
           </div>
         </div>
       </aside>
@@ -194,7 +242,7 @@ export default function AdminDashboard() {
               <Menu size={20}/>
             </button>
             <h1 className="text-lg sm:text-xl lg:text-2xl font-black italic uppercase tracking-tighter truncate">
-              {activeTab === "flota" ? "Tablero Control de Vehículos" : activeTab === "kyc" ? "Centro de Validación Digital (KYC)" : "🚨 Alertas Oficiales Centrales"}
+              {activeTab === "flota" ? "Tablero Control de Vehículos" : activeTab === "kyc" ? "Centro de Validación Digital (KYC)" : activeTab === "alertas" ? "🚨 Alertas de Paradas" : "🔧 Reportes de Conductores"}
             </h1>
           </div>
           <button onClick={cargarDatos} className="p-3 bg-slate-50 rounded-xl text-[#0D47A1] border hover:bg-slate-100 transition-all shrink-0 active:scale-95">
@@ -374,7 +422,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* VISTA C: ALERTAS RECIBIDAS DESDE CHEQUEADORES */}
+          {/* VISTA C: ALERTAS RECIBIDAS DESDE CHEQUEADORES (Saturación) */}
           {activeTab === "alertas" && (
             <div className="bg-white rounded-[30px] lg:rounded-[40px] shadow-xl border border-slate-100 overflow-x-auto w-full">
               <table className="w-full text-left min-w-max">
@@ -392,7 +440,7 @@ export default function AdminDashboard() {
                       <tr key={alerta.id} className="bg-amber-50/20 hover:bg-amber-50/50 transition-colors">
                         <td className="px-6 lg:px-10 py-6"><span className="bg-red-100 text-red-700 font-black px-4 py-2.5 rounded-xl text-sm uppercase tracking-wide inline-block shadow-sm border border-red-200">{alerta.parada_nombre}</span></td>
                         <td className="px-6 lg:px-10 py-6 font-black text-slate-700 uppercase text-xs leading-tight">Chequeador: {alerta.chequeadores?.nombre} {alerta.chequeadores?.apellido} <span className="text-slate-400 block text-[10px] mt-1 tracking-widest">V-{alerta.chequeadores?.cedula}</span></td>
-                        <td className="px-6 lg:px-10 py-6 text-sm font-bold text-slate-600">{new Date(alerta.creado_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                        <td className="px-6 lg:px-10 py-6 text-sm font-bold text-slate-600">{safeTime(alerta.creado_at)}</td>
                         <td className="px-6 lg:px-10 py-6 text-right"><button onClick={() => setDispatchTarget(alerta)} className="inline-flex items-center gap-2 bg-[#0D47A1] text-white px-6 py-3.5 rounded-xl text-xs font-black uppercase hover:bg-blue-800 transition-all shadow-md active:scale-95"><Car size={16} /> Despachar Unidad</button></td>
                       </tr>
                     ))
@@ -403,6 +451,55 @@ export default function AdminDashboard() {
               </table>
             </div>
           )}
+
+          {/* 🔥 VISTA D: REPORTES OPERATIVOS (Choferes) 🔥 */}
+          {activeTab === "reportes" && (
+            <div className="bg-white rounded-[30px] lg:rounded-[40px] shadow-xl border border-slate-100 overflow-x-auto w-full">
+              <table className="w-full text-left min-w-max">
+                <thead className="bg-orange-50/40">
+                  <tr className="text-xs uppercase font-black tracking-[0.1em] text-orange-600">
+                    <th className="px-6 lg:px-10 py-6">Tipo de Incidencia</th>
+                    <th className="px-6 lg:px-10 py-6">Operador Responsable</th>
+                    <th className="px-6 lg:px-10 py-6">Detalles del Reporte</th>
+                    <th className="px-6 lg:px-10 py-6 text-right">Gestión</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {reportesChoferes.length > 0 ? (
+                    reportesChoferes.map(reporte => (
+                      <tr key={reporte.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 lg:px-10 py-6">
+                          <span className="bg-orange-100 text-orange-700 font-black px-4 py-2.5 rounded-xl text-[10px] uppercase tracking-wide inline-block shadow-sm border border-orange-200">
+                            {reporte.tipo_reporte}
+                          </span>
+                        </td>
+                        <td className="px-6 lg:px-10 py-6 font-black text-slate-700 uppercase text-xs leading-tight">
+                          <div className="flex flex-col gap-1">
+                            <span>{reporte.emisor || "Chofer Activo"}</span>
+                            <span className="text-[#0D47A1] text-[10px] tracking-widest">PLACA: {reporte.placa_vehiculo}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 lg:px-10 py-6">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-bold text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100 italic">"{reporte.mensaje}"</span>
+                            <span className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1"><Clock size={12}/> {safeTime(reporte.created_at || reporte.creado_at)}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 lg:px-10 py-6 text-right">
+                          <button onClick={() => handleMarcarReporteResuelto(reporte.id)} className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-500 hover:text-white transition-all shadow-sm active:scale-95">
+                            <CheckCircle2 size={16} /> Resuelto
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan="4" className="px-6 lg:px-10 py-20 text-center text-slate-400 font-bold uppercase tracking-widest text-sm"><CheckCircle2 size={48} className="mx-auto mb-4 text-emerald-400 opacity-50"/>La flota opera sin incidentes mecánicos ni logísticos 👍</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
         </div>
       </main>
 

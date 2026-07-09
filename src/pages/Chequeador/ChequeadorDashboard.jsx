@@ -3,7 +3,7 @@ import {
   LogOut, Menu, X, User, Camera, ShieldCheck, CreditCard, Image as ImageIcon, 
   ArrowRight, AlertTriangle, FileText, CheckCircle, Clock, Smile, 
   ChevronDown, LayoutDashboard, Settings, Loader2, Bus, Users, 
-  ShieldAlert, Power, ClipboardList, Send, Edit2, Inbox, MapPin
+  ShieldAlert, Power, Edit2, Car
 } from "lucide-react";
 import { supabase } from "../../lib/supabase"; 
 import { useNavigate } from "react-router-dom";
@@ -42,8 +42,24 @@ export default function ChequeadorDashboard() {
 
   const [unidades, setUnidades] = useState([]);
   const [recorridos, setRecorridos] = useState([]);
-  const [reportes, setReportes] = useState([]); 
+  const [reportesEstudiantes, setReportesEstudiantes] = useState([]); 
+  const [reportesChoferes, setReportesChoferes] = useState([]); 
   const [misAlertas, setMisAlertas] = useState([]); 
+
+  const totalAlertas = (reportesEstudiantes?.length || 0) + (reportesChoferes?.length || 0);
+
+  // --- Funciones de Seguridad para Fechas (Evitan que la pantalla se ponga en blanco) ---
+  const safeTime = (dateStr) => {
+    if (!dateStr) return "--:--";
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? "--:--" : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const safeDate = (dateStr) => {
+    if (!dateStr) return "--/--/----";
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? "--/--/----" : d.toLocaleDateString();
+  };
 
   // --- Sincronización y Eventos ---
   useEffect(() => {
@@ -57,14 +73,26 @@ export default function ChequeadorDashboard() {
 
     const intervalo = setInterval(() => { cargarDatosOperativos(); }, 15000);
 
+    // 📡 ESCUCHA EN TIEMPO REAL: Reportes de Choferes
+    const channelChoferes = supabase
+      .channel('sync-reportes-choferes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reportes_operativos' }, 
+        (payload) => {
+          setReportesChoferes(prev => [payload.new, ...prev]);
+        }
+      )
+      .subscribe();
+
     const manejarClicsExteriores = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) setMenuAbierto(false);
       if (sidebarRef.current && !sidebarRef.current.contains(e.target)) setIsMenuOpen(false);
     };
     document.addEventListener("mousedown", manejarClicsExteriores);
+    
     return () => {
       document.removeEventListener("mousedown", manejarClicsExteriores);
       clearInterval(intervalo);
+      supabase.removeChannel(channelChoferes);
     };
   }, []);
 
@@ -84,7 +112,6 @@ export default function ChequeadorDashboard() {
 
   const cargarDatosOperativos = async () => {
     try {
-      // 1. Choferes en ruta
       const { data: choferesEnRuta } = await supabase.from('choferes').select('id, nombre, apellido, placa_vehiculo, hora_salida').eq('estado', 'en ruta');
       if (choferesEnRuta) {
         setUnidades(choferesEnRuta.map(c => ({
@@ -92,7 +119,6 @@ export default function ChequeadorDashboard() {
         })));
       }
 
-      // 2. Historial de Recorridos Permanente
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: historialGuardado, error: histError } = await supabase
@@ -108,12 +134,11 @@ export default function ChequeadorDashboard() {
             placa: h.placa,
             ruta: h.ruta,
             hora_llegada: h.hora_llegada,
-            fecha: new Date(h.creado_at).toLocaleDateString()
+            fecha: safeDate(h.creado_at)
           })));
         }
       }
 
-      // 3. Reportes de Estudiantes
       const { data: reportesActivos } = await supabase
         .from('reportes_parada')
         .select('id, parada_nombre, creado_at, perfiles(nombre, apellido)')
@@ -121,13 +146,23 @@ export default function ChequeadorDashboard() {
         .order('creado_at', { ascending: false });
 
       if (reportesActivos) {
-        setReportes(reportesActivos.map(r => ({
+        setReportesEstudiantes(reportesActivos.map(r => ({
           id: r.id,
           usuario: `${r.perfiles?.nombre || 'Estudiante'} ${r.perfiles?.apellido || ''}`,
-          hora: new Date(r.creado_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          hora: safeTime(r.creado_at),
           mensaje: `Reporte de saturación: ${r.parada_nombre}`
         })));
       }
+
+      const { data: reportesOp } = await supabase
+        .from('reportes_operativos')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (reportesOp) {
+        setReportesChoferes(reportesOp);
+      }
+
     } catch (error) { console.error("Error obteniendo datos:", error); }
   };
 
@@ -135,14 +170,10 @@ export default function ChequeadorDashboard() {
     try { await supabase.auth.signOut({ scope: 'local' }); navigate("/"); } catch (err) { navigate("/"); }
   };
 
-  // --- FUNCIONES OPERATIVAS ---
-  
   const registrarLlegada = async (unidad) => {
     const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setUploading(true); 
-    
     try {
-      // Guardar en la tabla histórica
       const { error: histError } = await supabase.from('historial_recorridos').insert([{
         chofer_nombre: unidad.chofer,
         placa: unidad.placa,
@@ -152,16 +183,13 @@ export default function ChequeadorDashboard() {
       }]);
       if (histError) throw histError;
 
-      // Liberar al chofer
       const { error: chofError } = await supabase.from('choferes').update({ estado: 'disponible' }).eq('id', unidad.id);
       if (chofError) throw chofError;
 
-      // Sincronizar en cascada la tabla unidades
       try {
         await supabase.from('unidades').update({ estado: 'disponible', puestos_libres: 4 }).eq('numero_unidad', unidad.placa);
       } catch(e) {}
 
-      // Actualizar UI en caliente
       setUnidades(unidades.filter(u => u.id !== unidad.id));
       setRecorridos([{ ...unidad, hora_llegada: horaActual, fecha: new Date().toLocaleDateString() }, ...recorridos]);
       
@@ -174,8 +202,13 @@ export default function ChequeadorDashboard() {
   };
 
   const atenderReporteEstudiante = async (id) => {
-    setReportes(reportes.filter(r => r.id !== id));
+    setReportesEstudiantes(reportesEstudiantes.filter(r => r.id !== id));
     await supabase.from('reportes_parada').update({ activo: false }).eq('id', id);
+  };
+
+  const atenderReporteChofer = async (id) => {
+    setReportesChoferes(reportesChoferes.filter(r => r.id !== id));
+    await supabase.from('reportes_operativos').delete().eq('id', id);
   };
 
   const enviarAlertaDeSaturacion = async () => {
@@ -199,7 +232,6 @@ export default function ChequeadorDashboard() {
     setIsSaving(false);
   };
 
-  // --- SISTEMA KYC ---
   const handleUploadFile = async (file, bucketKey, updateField) => {
     if (!file) return;
     setUploading(true);
@@ -303,11 +335,11 @@ export default function ChequeadorDashboard() {
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-xs uppercase text-left transition-colors ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><LayoutDashboard size={18} /> Panel de Control</button>
           
           <button onClick={() => { setVistaActiva("reportes"); setIsMenuOpen(false); }} className={`flex items-center justify-between w-full p-4 rounded-2xl font-black text-xs uppercase text-left transition-colors ${vistaActiva === "reportes" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
-            <div className="flex items-center gap-4"><Inbox size={18} /> Alertas Estudiantes</div>
-            {reportes.length > 0 && <span className="bg-red-500 text-white font-bold px-2 py-0.5 rounded-full text-[10px]">{reportes.length}</span>}
+            <div className="flex items-center gap-4"><FileText size={18} /> Centro de Alertas</div>
+            {totalAlertas > 0 && <span className="bg-red-500 text-white font-bold px-2 py-0.5 rounded-full text-[10px]">{totalAlertas}</span>}
           </button>
 
-          <button onClick={() => { setVistaActiva("historico"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-xs uppercase text-left transition-colors ${vistaActiva === "historico" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><ClipboardList size={18} /> Historial Operativo</button>
+          <button onClick={() => { setVistaActiva("historico"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-xs uppercase text-left transition-colors ${vistaActiva === "historico" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><FileText size={18} /> Historial Operativo</button>
         </div>
         
         <button onClick={handleLogout} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase border border-red-500/20 hover:bg-red-50 hover:text-white transition-all"><LogOut size={16} /> Salir del Sistema</button>
@@ -317,7 +349,7 @@ export default function ChequeadorDashboard() {
       <nav className="bg-[#0D47A1] border-b border-white/5 px-6 py-4 flex justify-between items-center relative z-30 shadow-sm text-white">
         <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(true); }} className="bg-white/10 p-2.5 rounded-xl border border-white/10 hover:bg-white/20 transition-colors flex items-center justify-center relative">
           <Menu size={20} />
-          {reportes.length > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#0D47A1]"></span>}
+          {totalAlertas > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#0D47A1] animate-pulse"></span>}
         </button>
         
         <div className="relative" ref={menuRef}>
@@ -355,7 +387,6 @@ export default function ChequeadorDashboard() {
             {vistaActiva === "inicio" && (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-300 max-w-4xl mx-auto">
                 
-                {/* BOTÓN ALERTA OFICIAL */}
                 <div className="bg-gradient-to-r from-red-600 to-red-900 p-6 rounded-[32px] shadow-lg border border-red-500/30 flex flex-col sm:flex-row items-center justify-between gap-5">
                   <div className="text-center sm:text-left">
                     <h3 className="font-black italic uppercase text-lg text-white">¿Parada Saturada?</h3>
@@ -367,7 +398,6 @@ export default function ChequeadorDashboard() {
                   </button>
                 </div>
 
-                {/* TARJETAS DE UNIDADES EN RUTA */}
                 <div className="space-y-4">
                   <h2 className="text-sm font-black text-blue-200 uppercase flex items-center gap-2 tracking-wider"><Bus size={18}/> Unidades en Aproximación</h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -405,43 +435,84 @@ export default function ChequeadorDashboard() {
               </div>
             )}
 
-            {/* 🎯 PESTAÑA 2: REPORTES ESTUDIANTES */}
+            {/* 🎯 PESTAÑA 2: REPORTES ESTUDIANTES Y CHOFERES */}
             {vistaActiva === "reportes" && (
-              <div className="space-y-4 animate-in slide-in-from-bottom duration-300 max-w-4xl mx-auto">
+              <div className="space-y-6 animate-in slide-in-from-bottom duration-300 max-w-4xl mx-auto">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg sm:text-xl font-black italic uppercase tracking-tight text-amber-400 flex items-center gap-2"><Inbox size={22}/> Buzón de Reportes</h2>
+                  <h2 className="text-lg sm:text-xl font-black italic uppercase tracking-tight text-white flex items-center gap-2"><FileText size={22}/> Centro de Alertas</h2>
                   <button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-4 py-2 rounded-xl uppercase font-black hover:bg-white/20 transition-colors">Volver</button>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {reportes.length > 0 ? reportes.map((r) => (
-                    <div key={r.id} className="bg-[#0D47A1] p-6 rounded-[30px] border border-amber-500/30 shadow-xl flex flex-col justify-between">
-                      <div>
-                        <div className="flex justify-between items-start mb-4 text-xs">
-                          <span className="font-black text-amber-400 uppercase flex items-center gap-1.5"><Users size={16}/> {r.usuario}</span>
-                          <span className="font-bold text-blue-200 flex items-center gap-1 bg-white/10 px-2 py-1 rounded-md"><Clock size={12}/> {r.hora}</span>
+                {/* SUB-SECCIÓN CHOFERES */}
+                {reportesChoferes.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-black uppercase text-orange-400 tracking-widest border-b border-orange-500/20 pb-2 mb-3 flex items-center gap-2"><AlertTriangle size={14}/> Reportes Operativos (Choferes)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {reportesChoferes.map((r) => (
+                        <div key={r.id} className="bg-orange-500/10 p-6 rounded-[30px] border border-orange-500/30 shadow-xl flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-4 text-xs">
+                              {/* 🔥 AQUÍ AHORA SE MUESTRA EL NOMBRE DEL CHOFER Y DEBAJO SU PLACA 🔥 */}
+                              <span className="font-black text-orange-400 uppercase flex flex-col gap-0.5">
+                                <span className="flex items-center gap-1.5 text-sm"><User size={16}/> {r.emisor || "Chofer"}</span>
+                                <span className="flex items-center gap-1.5 text-[10px] text-orange-300 opacity-80"><Car size={12}/> PLACA: {r.placa_vehiculo}</span>
+                              </span>
+                              <span className="font-bold text-orange-200 flex items-center gap-1 bg-orange-500/20 px-2 py-1 rounded-md shrink-0"><Clock size={12}/> {safeTime(r.created_at || r.creado_at)}</span>
+                            </div>
+                            <div className="mb-6">
+                              <p className="text-[10px] font-black tracking-widest text-white bg-orange-600/40 px-3 py-1.5 rounded-lg inline-block mb-3 uppercase border border-orange-500/30">{r.tipo_reporte}</p>
+                              <p className="text-sm font-bold text-white bg-white/5 p-4 rounded-xl border border-white/5">{r.mensaje}</p>
+                            </div>
+                          </div>
+                          <button onClick={() => atenderReporteChofer(r.id)} className="w-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs font-black py-3.5 rounded-xl uppercase transition-all flex items-center justify-center gap-2 border border-emerald-500/30 active:scale-95">
+                            <CheckCircle size={16}/> Marcar Solucionado
+                          </button>
                         </div>
-                        <p className="text-sm sm:text-base font-bold text-white mb-6 bg-white/5 p-4 rounded-xl border border-white/5">{r.mensaje}</p>
-                      </div>
-                      <button onClick={() => atenderReporteEstudiante(r.id)} className="w-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs font-black py-3.5 rounded-xl uppercase transition-all flex items-center justify-center gap-2 border border-emerald-500/30 active:scale-95">
-                        <CheckCircle size={16}/> Marcar Revisado
-                      </button>
+                      ))}
                     </div>
-                  )) : (
-                    <div className="col-span-full text-center py-20 text-blue-200 border border-dashed border-amber-500/30 rounded-[32px] bg-amber-500/10">
-                      <CheckCircle size={48} className="mx-auto mb-4 opacity-40 text-amber-400" /> 
-                      <p className="text-xs uppercase font-bold tracking-widest text-amber-200/80">Todo despejado. No hay reportes.</p>
+                  </div>
+                )}
+
+                {/* SUB-SECCIÓN ESTUDIANTES */}
+                {reportesEstudiantes.length > 0 && (
+                  <div className="space-y-3 mt-8">
+                    <h3 className="text-xs font-black uppercase text-amber-400 tracking-widest border-b border-amber-500/20 pb-2 mb-3 flex items-center gap-2"><Users size={14}/> Reportes de Saturación (Estudiantes)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {reportesEstudiantes.map((r) => (
+                        <div key={r.id} className="bg-[#0D47A1] p-6 rounded-[30px] border border-amber-500/30 shadow-xl flex flex-col justify-between">
+                          <div>
+                            <div className="flex justify-between items-start mb-4 text-xs">
+                              <span className="font-black text-amber-400 uppercase flex items-center gap-1.5"><Users size={16}/> {r.usuario}</span>
+                              <span className="font-bold text-blue-200 flex items-center gap-1 bg-white/10 px-2 py-1 rounded-md"><Clock size={12}/> {r.hora}</span>
+                            </div>
+                            <p className="text-sm sm:text-base font-bold text-white mb-6 bg-white/5 p-4 rounded-xl border border-white/5">{r.mensaje}</p>
+                          </div>
+                          <button onClick={() => atenderReporteEstudiante(r.id)} className="w-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs font-black py-3.5 rounded-xl uppercase transition-all flex items-center justify-center gap-2 border border-emerald-500/30 active:scale-95">
+                            <CheckCircle size={16}/> Marcar Revisado
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {totalAlertas === 0 ? (
+                  <div className="text-center py-20 text-blue-200 border border-dashed border-emerald-500/30 rounded-[32px] bg-emerald-500/10">
+                    <CheckCircle size={48} className="mx-auto mb-4 opacity-40 text-emerald-400" /> 
+                    <p className="text-xs uppercase font-bold tracking-widest text-emerald-200/80">Todo despejado. No hay alertas activas.</p>
+                  </div>
+                ) : null}
               </div>
             )}
 
             {/* 🎯 PESTAÑA 3: HISTÓRICO PERMANENTE */}
             {vistaActiva === "historico" && (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-300 text-left max-w-4xl mx-auto">
-                <div className="flex justify-between items-center mb-2">
-                  <h2 className="text-lg sm:text-xl font-black italic uppercase tracking-tight text-white flex items-center gap-2"><ClipboardList size={22}/> Auditoría de Llegadas</h2>
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-lg sm:text-xl font-black italic uppercase tracking-tight text-white flex items-center gap-2"><FileText size={22}/> Auditoría de Llegadas</h2>
+                    <p className="text-blue-300 text-xs font-bold uppercase mt-1">Total Completados: <span className="text-emerald-400 font-black px-2 bg-emerald-500/20 rounded-md border border-emerald-500/30">{recorridos.length} Vueltas</span></p>
+                  </div>
                   <button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-4 py-2 rounded-xl uppercase font-black hover:bg-white/20 transition-colors">Volver</button>
                 </div>
                 
@@ -449,7 +520,7 @@ export default function ChequeadorDashboard() {
                   {recorridos.length > 0 ? recorridos.map((r, index) => (
                     <div key={index} className="bg-[#0D47A1] p-5 sm:p-6 rounded-[30px] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg">
                       <div className="flex items-center gap-4">
-                        <div className="bg-emerald-500/20 p-3.5 rounded-2xl text-emerald-400 shrink-0"><MapPin size={22}/></div>
+                        <div className="bg-emerald-500/20 p-3.5 rounded-2xl text-emerald-400 shrink-0"><Car size={22}/></div>
                         <div>
                           <p className="text-base font-black italic uppercase text-white leading-tight">{r.chofer}</p>
                           <p className="text-[10px] sm:text-xs text-blue-300 font-bold uppercase mt-1 tracking-wider">{r.placa} • {r.ruta}</p>
@@ -464,7 +535,7 @@ export default function ChequeadorDashboard() {
                     </div>
                   )) : (
                     <div className="text-center py-20 text-blue-200 border border-dashed border-white/20 rounded-[32px] bg-white/5">
-                      <ClipboardList size={48} className="mx-auto mb-4 opacity-50" />
+                      <FileText size={48} className="mx-auto mb-4 opacity-50" />
                       <p className="text-xs uppercase font-bold tracking-widest opacity-80">Bitácora vacía. No hay llegadas registradas hoy.</p>
                     </div>
                   )}

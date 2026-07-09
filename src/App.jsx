@@ -17,7 +17,6 @@ import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
 import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 import EncuestaTransporte from "./pages/formulario/formulario";
-import Cump from "./pages/Cump/Cump";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -51,7 +50,6 @@ export default function App() {
           <Route path="/registro-chequeador" element={<RegistroChequeador />} />
           <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
           <Route path="/formulario" element={<EncuestaTransporte />} />
-          <Route path="/cump" element={<Cump />} />
 
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
