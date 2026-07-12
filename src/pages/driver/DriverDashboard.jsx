@@ -4,7 +4,7 @@ import {
   ShieldCheck, CreditCard, Image as ImageIcon, ArrowRight, 
   AlertTriangle, FileText, CheckCircle, Clock, Smile, ChevronDown, 
   LayoutDashboard, Settings, Navigation, MinusCircle, PlusCircle,
-  ShieldAlert, CheckCircle2, Power, Users, MessageSquare
+  ShieldAlert, CheckCircle2, Power, Users, MessageSquare, Send, MapPin
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -32,10 +32,16 @@ export default function DriverDashboard() {
   const [vistaActiva, setVistaActiva] = useState("inicio"); 
   const [menuAbierto, setMenuAbierto] = useState(false);
 
-  // 🔥 NUEVOS ESTADOS PARA REPORTES
+  // Estados para Reportes
   const [showReporteModal, setShowReporteModal] = useState(false);
   const [enviandoReporte, setEnviandoReporte] = useState(false);
   const [reporteData, setReporteData] = useState({ tipo: "Suministro de Gasolina", mensaje: "" });
+
+  // 🔥 NUEVOS ESTADOS: GESTIÓN DE RESPUESTA AL PASAJERO
+  const [showAvisoModal, setShowAvisoModal] = useState(false);
+  const [reservaActiva, setReservaActiva] = useState(null);
+  const [avisoData, setAvisoData] = useState({ estado: "Confirmado", mensaje: "" });
+  const [enviandoAviso, setEnviandoAviso] = useState(false);
 
   // Estados de Datos Unificados
   const [choferData, setChoferData] = useState({ 
@@ -51,7 +57,11 @@ export default function DriverDashboard() {
   useEffect(() => {
     const inicializarDashboard = async () => {
       setLoadingPagina(true);
-      await fetchChofer();
+      const usuario = await fetchUser();
+      await fetchUnidades();
+      if (usuario) {
+        // En el rol de chofer, inicializar datos si es necesario (fetchReservas se hace en el otro hook)
+      }
       setLoadingPagina(false);
     };
     inicializarDashboard();
@@ -96,13 +106,19 @@ export default function DriverDashboard() {
     const channelHistorial = supabase
       .channel('sync-historial-reservas')
       .on('postgres_changes', { 
-          event: 'INSERT', 
+          event: '*', 
           schema: 'public', 
           table: 'reservas', 
           filter: `placa_vehiculo=eq.${choferData.placa_vehiculo}` 
         }, 
         (payload) => {
-          setReservasActivas(prev => [payload.new, ...prev]);
+          if (payload.eventType === 'INSERT') {
+            setReservasActivas(prev => [payload.new, ...prev]);
+          } else if (payload.eventType === 'DELETE') {
+            setReservasActivas(prev => prev.filter(r => r.id !== payload.old.id));
+          } else if (payload.eventType === 'UPDATE') {
+            setReservasActivas(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
+          }
         }
       )
       .subscribe();
@@ -113,7 +129,7 @@ export default function DriverDashboard() {
     };
   }, [choferData?.placa_vehiculo]);
 
-  const fetchChofer = async () => {
+  const fetchUser = async () => {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
@@ -138,6 +154,10 @@ export default function DriverDashboard() {
       console.error("Error cargando sesión del operador:", err.message);
     }
     return null;
+  };
+
+  const fetchUnidades = async () => {
+    // Si necesitas traer datos globales de unidades
   };
 
   const handleLogout = async () => {
@@ -193,19 +213,49 @@ export default function DriverDashboard() {
     if (!error) setChoferData({ ...choferData, estado: nuevoEstado, hora_salida: nuevaHora });
   };
 
-  // 🔥 NUEVA FUNCIÓN: ELIMINA AL ESTUDIANTE DE LA LISTA AL SUBIR AL BUS
   const marcarComoAbordado = async (reservaId) => {
     try {
-      // Borramos de la BD para limpiar la lista
       await supabase.from('reservas').delete().eq('id', reservaId);
-      // Borramos del estado visual al instante
       setReservasActivas(prev => prev.filter(r => r.id !== reservaId));
     } catch(e) {
       console.error("Error al marcar como abordado", e);
     }
   };
 
-  // 🔥 NUEVA FUNCIÓN: ENVÍA REPORTE AL CHEQUEADOR
+  const enviarAvisoEstudiante = async () => {
+    if (!reservaActiva) return;
+    setEnviandoAviso(true);
+    
+    try {
+      const { error } = await supabase.from('reservas').update({
+        estado_conductor: avisoData.estado,
+        mensaje_conductor: avisoData.mensaje
+      }).eq('id', reservaActiva.id);
+      
+      if (error) throw error;
+      
+      // Actualizamos visualmente la lista de inmediato
+      setReservasActivas(prev => prev.map(r => r.id === reservaActiva.id ? {...r, estado_conductor: avisoData.estado, mensaje_conductor: avisoData.mensaje} : r));
+      
+      setShowAvisoModal(false);
+      setReservaActiva(null);
+      setAvisoData({ estado: "Confirmado", mensaje: "" });
+    } catch (err) {
+      alert("Error avisando al estudiante: " + err.message);
+    } finally {
+      setEnviandoAviso(false);
+    }
+  };
+
+  const abrirModalAviso = (reserva) => {
+    setReservaActiva(reserva);
+    setAvisoData({ 
+      estado: reserva.estado_conductor && reserva.estado_conductor !== 'Pendiente' ? reserva.estado_conductor : "Confirmado", 
+      mensaje: reserva.mensaje_conductor || "" 
+    });
+    setShowAvisoModal(true);
+  };
+
   const enviarReporteOperativo = async () => {
     setEnviandoReporte(true);
     try {
@@ -323,6 +373,69 @@ export default function DriverDashboard() {
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
       
+      {/* --- MODAL PARA AVISAR AL ESTUDIANTE --- */}
+      {showAvisoModal && reservaActiva && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-6">
+          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => setShowAvisoModal(false)}></div>
+          <div className="relative bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200 text-left">
+            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="text-blue-500" size={24} />
+                <h3 className="text-lg font-black italic uppercase leading-none">Avisar a Pasajero</h3>
+              </div>
+              <button onClick={() => setShowAvisoModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button>
+            </div>
+            
+            <div className="mb-5">
+              <p className="text-[10px] font-black uppercase text-blue-400">Estudiante</p>
+              <p className="font-bold text-slate-800 text-sm truncate">{reservaActiva.nombre_estudiante}</p>
+              <p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1">
+                Ubicación: <span className="text-blue-600">{reservaActiva.ubicacion || "N/A"}</span>
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black uppercase text-blue-400">Estado de Recogida</label>
+                <div className="flex gap-2 mt-2">
+                  <button 
+                    onClick={() => setAvisoData({...avisoData, estado: "Confirmado"})}
+                    className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1 border-2 ${avisoData.estado === "Confirmado" ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400'}`}
+                  >
+                    {avisoData.estado === "Confirmado" && <Check size={14}/>} Confirmado
+                  </button>
+                  <button 
+                    onClick={() => setAvisoData({...avisoData, estado: "En camino"})}
+                    className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1 border-2 ${avisoData.estado === "En camino" ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-50 border-transparent text-gray-400'}`}
+                  >
+                    {avisoData.estado === "En camino" && <Navigation size={14}/>} En camino
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-blue-400">Mensaje para el estudiante</label>
+                <textarea 
+                  value={avisoData.mensaje}
+                  onChange={e => setAvisoData({...avisoData, mensaje: e.target.value})}
+                  rows="3"
+                  placeholder="Ej: Ya estoy llegando a la parada, atento..."
+                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                ></textarea>
+              </div>
+
+              <button 
+                onClick={enviarAvisoEstudiante} 
+                disabled={enviandoAviso}
+                className="w-full bg-[#1566D0] hover:bg-blue-800 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                {enviandoAviso ? <Loader2 className="animate-spin" /> : <><Send size={16}/> Enviar Aviso</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* --- MODAL DE REPORTES INCIDENCIAS --- */}
       {showReporteModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
@@ -612,7 +725,7 @@ export default function DriverDashboard() {
               <ShieldAlert size={36} className="shrink-0 text-amber-400" />
               <div>
                 <p className="font-black text-xs uppercase tracking-tight">Acceso Bloqueado</p>
-                <p className="text-[11px] opacity-80 font-medium">Debes completar el triple envío para que la administración del circuito te habilite en los tableros de reservas.</p>
+                <p className="text-[11px] opacity-80 font-medium">Debes completar el triple envío para que la administración te habilite en los tableros de reservas.</p>
               </div>
             </div>
 
@@ -690,7 +803,6 @@ export default function DriverDashboard() {
                   </div>
                 </div>
 
-                {/* 🔥 BOTÓN PARA REPORTAR INCIDENCIAS */}
                 <button 
                   onClick={() => setShowReporteModal(true)} 
                   className="w-full bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 text-orange-400 rounded-[30px] p-5 shadow-sm flex items-center justify-between transition-all active:scale-95"
@@ -707,7 +819,7 @@ export default function DriverDashboard() {
               </div>
             )}
 
-            {/* 🔥 VISTA: LISTA DE ESTUDIANTES RESERVADOS CON BOTÓN ABORDÓ 🔥 */}
+            {/* 🔥 VISTA: LISTA DE ESTUDIANTES RESERVADOS CON DOBLE OPCIÓN 🔥 */}
             {vistaActiva === "reservas" && (
               <div className="space-y-4 animate-in slide-in-from-bottom duration-300 text-left">
                 <div className="flex justify-between items-center px-2">
@@ -722,27 +834,53 @@ export default function DriverDashboard() {
                     <p className="text-[10px] mt-2 opacity-70">Los estudiantes que reserven su cupo aparecerán aquí en tiempo real.</p>
                   </div>
                 ) : (
-                  <div className="space-y-3 mt-4">
+                  <div className="space-y-4 mt-4">
                     {reservasActivas.map((reserva, idx) => (
-                      <div key={idx} className="bg-white p-5 rounded-[24px] shadow-xl flex items-center justify-between text-[#0D47A1] animate-in fade-in duration-300">
-                        <div className="flex items-center gap-4">
-                          <div className="bg-blue-100 p-3 rounded-full text-blue-600"><User size={20}/></div>
-                          <div>
-                            <p className="text-sm font-black uppercase leading-tight">{reserva.nombre_estudiante || "Estudiante Unefista"}</p>
-                            <p className="text-[10px] font-bold text-slate-400">C.I: {reserva.cedula_estudiante || "N/A"}</p>
-                            <p className="text-[10px] font-black text-orange-500 uppercase mt-1">
-                              Asientos reservados: {reserva.puestos || 1}
+                      <div key={idx} className="bg-white p-5 rounded-[24px] shadow-xl flex flex-col gap-4 text-[#0D47A1] animate-in fade-in duration-300">
+                        
+                        {/* Fila superior: Info del estudiante y Estado actual */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex gap-4">
+                            <div className="bg-blue-100 p-3 rounded-full text-blue-600 self-start"><User size={20}/></div>
+                            <div>
+                              <p className="text-sm font-black uppercase leading-tight">{reserva.nombre_estudiante || "Estudiante"}</p>
+                              <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mt-0.5"><MapPin size={10}/> {reserva.ubicacion || "Parada General"}</p>
+                              
+                              {/* Indicador visual de si el chofer ya respondió */}
+                              {reserva.estado_conductor && reserva.estado_conductor !== 'Pendiente' && (
+                                <span className={`inline-block mt-2 text-[9px] font-black uppercase px-2 py-1 rounded-md ${reserva.estado_conductor === 'Confirmado' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                                  Tú: {reserva.estado_conductor}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            <p className="text-[10px] font-black text-orange-500 uppercase">
+                              {reserva.puestos || 1} Asiento(s)
                             </p>
                           </div>
                         </div>
-                        <div className="text-right">
+
+                        <div className="w-full h-px bg-slate-100"></div>
+
+                        {/* Fila inferior: Botones de Acción */}
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => abrirModalAviso(reserva)}
+                            className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <MessageSquare size={14} /> Avisar
+                          </button>
+                          
                           <button 
                             onClick={() => marcarComoAbordado(reserva.id)}
-                            className="bg-emerald-100 text-emerald-600 hover:bg-emerald-500 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1"
+                            className="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5"
                           >
                             <CheckCircle2 size={14} /> Abordó
                           </button>
                         </div>
+
                       </div>
                     ))}
                   </div>
@@ -756,7 +894,7 @@ export default function DriverDashboard() {
                 <div className="bg-[#0D47A1] p-6 rounded-[30px] border border-white/10 flex items-center justify-between shadow-xl">
                   <div className="flex items-center gap-4">
                     <div className="bg-emerald-500/20 p-3 rounded-2xl text-emerald-400"><CheckCircle size={24}/></div>
-                    <div><p className="text-sm font-black italic uppercase">Ruta Maraven - Centro</p><p className="text-[10px] text-blue-300 font-bold uppercase">Estatus: Finalizado con éxito</p></div>
+                    <div><p className="text-sm font-black italic uppercase">Ruta Maraven Centro</p><p className="text-[10px] text-blue-300 font-bold uppercase">Estatus: Finalizado con éxito</p></div>
                   </div>
                   <div className="text-right text-[10px] font-bold text-white/60"><Clock size={12} className="inline mr-1 opacity-60"/>{new Date().toLocaleDateString()}</div>
                 </div>
