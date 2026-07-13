@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from "react";
 import { 
   User, Mail, Lock, CreditCard, Phone, Eye, EyeOff, 
-  ArrowLeft, AlertCircle, CheckCircle, XCircle 
+  ArrowLeft, AlertCircle, CheckCircle, XCircle, Briefcase, 
+  Loader2, ShieldCheck, ArrowRight, LogIn
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from '../../lib/supabase';
@@ -10,18 +11,24 @@ import { InputIcon } from "../../components/InputIcon";
 export default function Register() {
   const navigate = useNavigate();
 
+  // --- ESTADOS DE INTERFAZ Y VALIDACIÓN ---
   const [showPassword, setShowPassword] = useState(false);
   const [alert, setAlert] = useState({ msg: "", type: "error" });
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  // --- ESTADO DEL FORMULARIO ---
   const [formData, setFormData] = useState({ 
-    nombre: '', apellido: '', cedula: '', telefono: '', email: '', password: '' 
+    nombre: '', apellido: '', cedula: '', telefono: '', email: '', password: '', rol: 'Estudiante' 
   });
 
+  // --- FUNCIÓN PARA MOSTRAR ALERTAS ---
   const showMessage = (msg, type = "error") => {
     setAlert({ msg, type });
     setTimeout(() => setAlert({ msg: "", type: "error" }), 4000);
   };
 
+  // --- MANEJADOR DE CAMBIOS CON FILTRADO ESTRICTO EN CALIENTE ---
   const handleChange = (e) => {
     const { name, value } = e.target;
     let val = value;
@@ -38,6 +45,7 @@ export default function Register() {
     setFormData({ ...formData, [name]: val });
   };
 
+  // --- CHECKLIST DE VALIDACIONES AUTOMÁTICAS ---
   const validations = useMemo(() => {
     const { nombre, apellido, email, password, cedula, telefono } = formData;
     return {
@@ -53,6 +61,7 @@ export default function Register() {
     };
   }, [formData]);
 
+  // --- LÓGICA DE REGISTRO BLINDADA ---
   const handleRegister = async (e) => {
     e.preventDefault();
     if (!Object.values(validations).every(v => v))
@@ -60,8 +69,9 @@ export default function Register() {
 
     setLoading(true);
     try {
-      const { email, password, cedula, nombre, apellido, telefono } = formData;
+      const { email, password, cedula, nombre, apellido, telefono, rol } = formData;
       
+      // 1. Evitar duplicados cruzados en las tablas principales
       const query = `cedula.eq.${cedula},email.eq.${email.toLowerCase()},telefono.eq.${telefono}`;
       const [estCheck, chofCheck] = await Promise.all([
         supabase.from('perfiles').select('cedula').or(query).maybeSingle(),
@@ -70,19 +80,25 @@ export default function Register() {
 
       if (estCheck.data || chofCheck.data) return showMessage("Estos datos ya están registrados.");
 
+      // 2. Registro en Supabase Auth
       const { data: auth, error: aErr } = await supabase.auth.signUp({ email, password });
       if (aErr) throw aErr;
 
       if (auth.user) {
+        // 3. Inserción en perfiles con el rol de la comunidad asignado
         const { error: pErr } = await supabase.from('perfiles').insert([{
-          id: auth.user.id, nombre: nombre.trim(), apellido: apellido.trim(),
-          cedula, telefono, email: email.toLowerCase().trim(), rol: 'estudiante'
+          id: auth.user.id, 
+          nombre: nombre.trim(), 
+          apellido: apellido.trim(),
+          cedula, 
+          telefono, 
+          email: email.toLowerCase().trim(), 
+          rol: rol
         }]);
 
         if (pErr) throw pErr;
 
-        showMessage("¡Registro exitoso! Redirigiendo...", "success");
-        setTimeout(() => navigate("/login"), 1500);
+        setSuccess(true);
       }
     } catch (err) {
       showMessage(err.message);
@@ -98,6 +114,38 @@ export default function Register() {
     </div>
   );
 
+  // --- VISTA DE ÉXITO (GLASSMORPHISM COHESIVA) ---
+  if (success) {
+    return (
+      <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center p-6 text-white font-sans relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <div className="absolute top-[-5%] left-[-10%] w-96 h-96 bg-white rounded-full blur-[120px]" />
+        </div>
+
+        <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-[35px] border border-white/20 shadow-2xl p-10 text-center relative z-10 animate-in zoom-in duration-300">
+          <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl mb-6">
+            <ShieldCheck size={42} className="text-[#1566D0]" />
+          </div>
+          <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white mb-4">¡Perfil Creado!</h2>
+          <p className="text-sm text-white/80 font-medium leading-relaxed mb-6">
+            Tu cuenta ha sido creada exitosamente dentro de la comunidad. Al ingresar al sistema, recuerda verificar tus datos para habilitar el uso de los tickets y rutas.
+          </p>
+          <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-xs text-emerald-200 font-bold uppercase tracking-widest mb-6">
+            ✔️ Registro Completado: {formData.rol.toUpperCase()}
+          </div>
+          
+          <button 
+            onClick={() => navigate("/login")} 
+            className="w-full bg-white text-[#1566D0] py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg flex items-center justify-center gap-2 hover:bg-blue-50"
+          >
+            <LogIn size={16} /> Iniciar Sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- VISTA DEL FORMULARIO PRINCIPAL ---
   return (
     <div className="min-h-screen bg-[#1566D0] flex items-center justify-center px-4 py-8 text-white relative overflow-hidden">
       
@@ -107,7 +155,7 @@ export default function Register() {
 
       {alert.msg && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border ${alert.type === "success" ? "bg-emerald-500 border-emerald-400" : "bg-red-500 border-red-400"} px-4 py-3 text-sm shadow-lg animate-in slide-in-from-top-4`}>
-          <AlertCircle className="w-4 h-4" /> {alert.msg}
+          <AlertCircle className="w-4 h-4 shrink-0" /> {alert.msg}
         </div>
       )}
 
@@ -123,7 +171,8 @@ export default function Register() {
           </div>
         </div>
 
-        <h2 className="text-3xl font-extrabold text-center mb-6 tracking-tight">Registro</h2>
+        <h2 className="text-3xl font-extrabold text-center mb-1 tracking-tight">Registro</h2>
+        <p className="text-center text-xs text-white/70 mb-6">Únete a la comunidad de transporte universitario.</p>
 
         <form onSubmit={handleRegister} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -132,13 +181,31 @@ export default function Register() {
           </div>
           <InputIcon icon={<CreditCard size={18}/>} name="cedula" placeholder="Cédula" val={formData.cedula} change={handleChange} maxLength={10} />
           <InputIcon icon={<Phone size={18}/>} name="telefono" placeholder="Teléfono" val={formData.telefono} change={handleChange} maxLength={11} />
+
+          {/* SELECTOR DE ROL UNIVERSITARIO */}
+          <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10 focus-within:border-white/40 transition-all">
+            <Briefcase className="w-5 h-5 mr-3 opacity-40 shrink-0" />
+            <select 
+              name="rol" 
+              value={formData.rol} 
+              onChange={handleChange} 
+              className="bg-transparent w-full outline-none text-sm text-white appearance-none cursor-pointer focus:text-white [&>option]:text-slate-800"
+            >
+              <option value="Estudiante">Estudiante</option>
+              <option value="Docente">Docente</option>
+              <option value="Personal Administrativo">Personal Administrativo</option>
+              <option value="Personal Obrero">Personal Obrero</option>
+              <option value="Personal Militar">Personal Militar</option>
+            </select>
+          </div>
+
           <InputIcon icon={<Mail size={18}/>} name="email" placeholder="Correo (Máx 40)" val={formData.email} change={handleChange} maxLength={40} />
 
           <div className="space-y-2">
             <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10 focus-within:border-white/40 transition-all">
-              <Lock className="w-5 h-5 mr-3 opacity-40" />
+              <Lock className="w-5 h-5 mr-3 opacity-40 shrink-0" />
               <input type={showPassword ? "text" : "password"} name="password" placeholder="Contraseña" required value={formData.password} onChange={handleChange} className="bg-transparent w-full outline-none text-sm placeholder:text-white/60" maxLength={20}/>
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-white/40 hover:text-white transition-colors">
+              <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-white/40 hover:text-white transition-colors shrink-0">
                 {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
               </button>
             </div>
@@ -151,8 +218,8 @@ export default function Register() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading} className="w-full bg-white text-[#1566D0] py-3.5 rounded-2xl font-bold mt-6 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 hover:bg-blue-50">
-            {loading ? "VALIDANDO..." : "CREAR CUENTA"}
+          <button type="submit" disabled={loading} className="w-full bg-white text-[#1566D0] py-3.5 rounded-2xl font-bold mt-6 shadow-lg active:scale-[0.98] transition-all disabled:opacity-50 hover:bg-blue-50 flex items-center justify-center gap-2">
+            {loading ? <Loader2 className="animate-spin" size={18} /> : <>REGISTRARSE <ArrowRight size={16}/></>}
           </button>
         </form>
       </div>

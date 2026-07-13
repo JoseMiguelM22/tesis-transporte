@@ -48,7 +48,7 @@ export default function ChequeadorDashboard() {
 
   const totalAlertas = (reportesEstudiantes?.length || 0) + (reportesChoferes?.length || 0);
 
-  // --- Funciones de Seguridad para Fechas (Evitan que la pantalla se ponga en blanco) ---
+  // --- Funciones de Seguridad para Fechas ---
   const safeTime = (dateStr) => {
     if (!dateStr) return "--:--";
     const d = new Date(dateStr);
@@ -95,6 +95,35 @@ export default function ChequeadorDashboard() {
       supabase.removeChannel(channelChoferes);
     };
   }, []);
+
+  // 🔥 NUEVO EFFECT: ESCUCHA EN TIEMPO REAL PARA EL KYC DEL CHEQUEADOR 🔥
+  useEffect(() => {
+    if (!chequeadorData?.id) return;
+
+    const channelKYC = supabase
+      .channel('sync-kyc-chequeador')
+      .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'chequeadores', 
+          filter: `id=eq.${chequeadorData.id}` 
+        }, 
+        (payload) => {
+          // Si el administrador le cambia el status, se actualiza la pantalla sola
+          setChequeadorData(prev => ({ 
+            ...prev, 
+            kyc_verificado: payload.new.kyc_verificado,
+            kyc_cedula_url: payload.new.kyc_cedula_url,
+            kyc_rostro_url: payload.new.kyc_rostro_url
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channelKYC);
+    };
+  }, [chequeadorData?.id]);
 
   const fetchChequeador = async () => {
     try {

@@ -1,15 +1,21 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate, Link } from "react-router-dom";
 import { 
   User, ShieldCheck, CreditCard, Phone, Car, 
-  Lock, Loader2, ArrowRight, Mail, LogIn, Users, MapPin, Bus
+  Lock, Loader2, ArrowRight, Mail, LogIn, Users, MapPin, Bus,
+  Eye, EyeOff, AlertCircle, CheckCircle, XCircle
 } from "lucide-react";
+import { InputIcon } from "../../components/InputIcon";
 
 export default function RegistroChofer() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  
+  // --- ESTADOS DE INTERFAZ Y VALIDACIÓN ---
+  const [showPassword, setShowPassword] = useState(false);
+  const [alert, setAlert] = useState({ msg: "", type: "error" });
 
   // --- ESTADO DEL FORMULARIO ---
   const [formData, setFormData] = useState({
@@ -24,57 +30,99 @@ export default function RegistroChofer() {
     password: "",
   });
 
-  // --- MANEJADOR DE CAMBIOS CON FILTRADO EN CALIENTE ---
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    if (name === "nombre" || name === "apellido") {
-      const soloLetras = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "");
-      setFormData({ ...formData, [name]: soloLetras });
-    } 
-    else if (name === "cedula" || name === "telefono") {
-      const soloNumeros = value.replace(/[^0-9]/g, "");
-      setFormData({ ...formData, [name]: soloNumeros });
-    } 
-    else if (name === "placa") {
-      const alfanumericoMayus = value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-      setFormData({ ...formData, [name]: alfanumericoMayus });
-    } 
-    else {
-      setFormData({ ...formData, [name]: value });
-    }
+  // --- FUNCIÓN PARA MOSTRAR ALERTAS ---
+  const showMessage = (msg, type = "error") => {
+    setAlert({ msg, type });
+    setTimeout(() => setAlert({ msg: "", type: "error" }), 4000);
   };
 
-  // --- LÓGICA DE REGISTRO UNIFICADA ---
+  // --- MANEJADOR DE CAMBIOS CON FILTRADO ESTRICTO EN CALIENTE ---
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    let val = value;
+    
+    // 🎯 Limpiadores y Límites estrictos (Igual al estudiante + placa)
+    if (name === 'nombre' || name === 'apellido') val = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]/g, "").slice(0, 15);
+    if (name === 'cedula') val = value.replace(/\D/g, "").slice(0, 10);
+    if (name === 'telefono') val = value.replace(/\D/g, "").slice(0, 11);
+    if (name === 'placa') val = value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 8);
+    if (name === 'email') val = value.replace(/\s/g, "").slice(0, 40);
+    
+    // 🎯 RESTRICCIÓN DE CONTRASEÑA: Solo letras y números, sin espacios
+    if (name === 'password') val = value.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+
+    // Los selectores de capacidad y ruta pasan directo
+    if (name === 'capacidad' || name === 'ruta') val = value;
+
+    setFormData({ ...formData, [name]: val });
+  };
+
+  // --- CHECKLIST DE VALIDACIONES AUTOMÁTICAS ---
+  const validations = useMemo(() => {
+    const { nombre, apellido, email, password, cedula, telefono, placa } = formData;
+    return {
+      nombre: nombre.length >= 3,
+      apellido: apellido.length >= 3,
+      cedula: cedula.length >= 7,
+      telefono: telefono.length === 11,
+      placa: placa.length >= 6,
+      email: email.includes("@") && email.length >= 10,
+      passwordLength: password.length >= 8,
+      passwordUpper: /[A-Z]/.test(password),
+      passwordLower: /[a-z]/.test(password),
+      passwordNumber: /\d/.test(password)
+    };
+  }, [formData]);
+
+  // --- LÓGICA DE REGISTRO BLINDADA ---
   const handleRegistro = async (e) => {
     e.preventDefault();
+    
+    // Verificamos que todo el semáforo esté en verde
+    if (!Object.values(validations).every(v => v)) {
+      return showMessage("Revisa que todos los campos cumplan los requisitos");
+    }
+
     setLoading(true);
 
     try {
-      // 1. Registro en Supabase Auth
+      const { email, password, cedula, nombre, apellido, telefono, placa, capacidad, ruta } = formData;
+      
+      // 1. Evitar duplicados cruzados (Estudiantes o Choferes con los mismos datos)
+      const query = `cedula.eq.${cedula},email.eq.${email.toLowerCase()},telefono.eq.${telefono}`;
+      const [estCheck, chofCheck] = await Promise.all([
+        supabase.from('perfiles').select('cedula').or(query).maybeSingle(),
+        supabase.from('choferes').select('cedula').or(query).maybeSingle()
+      ]);
+
+      if (estCheck.data || chofCheck.data) {
+        return showMessage("Estos datos (Cédula, Email o Teléfono) ya están registrados en el sistema.");
+      }
+
+      // 2. Registro en Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+        email: email.toLowerCase(),
+        password: password,
       });
 
       if (authError) throw authError;
 
       if (authData?.user) {
-        const capacidadNum = parseInt(formData.capacidad, 10);
+        const capacidadNum = parseInt(capacidad, 10);
 
-        // 2. Inserción en la tabla unificada de choferes
+        // 3. Inserción en la tabla unificada de choferes
         const { error: dbError } = await supabase
           .from("choferes") 
           .insert([
             {
               id: authData.user.id,
-              nombre: formData.nombre,
-              apellido: formData.apellido,
-              cedula: formData.cedula,
-              telefono: formData.telefono,
-              placa_vehiculo: formData.placa,
-              email: formData.email,
-              ruta: formData.ruta, 
+              nombre: nombre.trim(),
+              apellido: apellido.trim(),
+              cedula: cedula,
+              telefono: telefono,
+              placa_vehiculo: placa,
+              email: email.toLowerCase().trim(),
+              ruta: ruta, 
               kyc_verificado: false, 
               capacidad_total: capacidadNum, 
               puestos_libres: capacidadNum, 
@@ -88,18 +136,24 @@ export default function RegistroChofer() {
       }
     } catch (err) {
       console.error("Error en Registro:", err.message);
-      alert("Error al registrar: " + err.message);
+      showMessage(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // --- VISTA DE ÉXITO (ADAPTADA AL GLASSMORPHISM) ---
+  // --- COMPONENTE VISUAL DEL CHECKLIST ---
+  const CheckItem = ({ ok, text }) => (
+    <div className="flex items-center gap-1 text-[11px] font-bold">
+      {ok ? <CheckCircle className="text-green-400 w-3.5 h-3.5" /> : <XCircle className="text-red-400 w-3.5 h-3.5" />}
+      <span className={ok ? "text-green-300" : "text-red-300"}>{text}</span>
+    </div>
+  );
+
+  // --- VISTA DE ÉXITO (GLASSMORPHISM) ---
   if (success) {
     return (
       <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center p-6 text-white font-sans relative overflow-hidden">
-        
-        {/* Fondo decorativo blur */}
         <div className="absolute inset-0 opacity-10 pointer-events-none">
           <div className="absolute top-[-5%] left-[-10%] w-96 h-96 bg-white rounded-full blur-[120px]" />
         </div>
@@ -127,7 +181,7 @@ export default function RegistroChofer() {
     );
   }
 
-  // --- VISTA DEL FORMULARIO ---
+  // --- VISTA DEL FORMULARIO PRINCIPAL ---
   return (
     <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center p-4 sm:p-6 font-sans relative overflow-hidden text-white">
       
@@ -136,8 +190,15 @@ export default function RegistroChofer() {
         <div className="absolute top-0 right-0 w-96 h-96 bg-white rounded-full blur-[120px]" />
       </div>
 
+      {/* ALERTA FLOTANTE ESTILO ESTUDIANTE */}
+      {alert.msg && (
+        <div className={`fixed top-4 left-1/2 -translate-x-1/2 w-[90%] max-w-md z-50 flex items-center gap-2 rounded-2xl border ${alert.type === "success" ? "bg-emerald-500 border-emerald-400" : "bg-red-500 border-red-400"} px-4 py-3 text-sm shadow-lg animate-in slide-in-from-top-4`}>
+          <AlertCircle className="w-4 h-4 shrink-0" /> {alert.msg}
+        </div>
+      )}
+
       {/* TARJETA ESTILO GLASSMORPHISM */}
-      <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-[35px] border border-white/20 shadow-2xl p-6 sm:p-8 relative z-10 animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-[35px] border border-white/20 shadow-2xl p-6 sm:p-8 relative z-10 animate-in fade-in duration-300 my-8">
         
         {/* BOTÓN VOLVER */}
         <div className="mb-6">
@@ -169,78 +230,38 @@ export default function RegistroChofer() {
           <p className="text-white/70 text-xs">Completa tus datos operativos de ruta.</p>
         </div>
 
-        {/* FORMULARIO */}
+        {/* FORMULARIO BLINDADO */}
         <form onSubmit={handleRegistro} className="space-y-4">
           
           <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
-              <User className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
-              <input 
-                type="text" name="nombre" placeholder="Nombre" required
-                maxLength={15}
-                value={formData.nombre} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
-            <div className="relative">
-              <User className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
-              <input 
-                type="text" name="apellido" placeholder="Apellido" required
-                maxLength={15}
-                value={formData.apellido} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
+            <InputIcon icon={<User size={18}/>} name="nombre" placeholder="Nombre" val={formData.nombre} change={handleChange} maxLength={15} />
+            <InputIcon icon={<User size={18}/>} name="apellido" placeholder="Apellido" val={formData.apellido} change={handleChange} maxLength={15} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
-              <CreditCard className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
-              <input 
-                type="text" name="cedula" placeholder="Cédula" required
-                maxLength={10}
-                value={formData.cedula} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
-            <div className="relative">
-              <Phone className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
-              <input 
-                type="tel" name="telefono" placeholder="Teléfono" required
-                maxLength={15}
-                value={formData.telefono} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
+            <InputIcon icon={<CreditCard size={18}/>} name="cedula" placeholder="Cédula" val={formData.cedula} change={handleChange} maxLength={10} />
+            <InputIcon icon={<Phone size={18}/>} name="telefono" placeholder="Teléfono" val={formData.telefono} change={handleChange} maxLength={11} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="relative">
-              <Car className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
-              <input 
-                type="text" name="placa" placeholder="PLACA" required
-                maxLength={8}
-                value={formData.placa} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white placeholder:text-white/60 uppercase tracking-widest focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
+            <InputIcon icon={<Car size={18}/>} name="placa" placeholder="PLACA" val={formData.placa} change={handleChange} maxLength={8} />
             
+            {/* SELECT DE CAPACIDAD */}
             <div className="relative">
               <Users className="absolute left-3.5 top-3.5 text-white/60 w-4 h-4" />
               <select
                 name="capacidad"
                 value={formData.capacidad}
                 onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white appearance-none cursor-pointer focus:border-white focus:ring-1 focus:ring-white transition-all"
+                className="w-full bg-transparent border border-white/30 rounded-xl pl-10 pr-3 py-3 text-xs outline-none text-white appearance-none cursor-pointer focus:border-white focus:ring-1 focus:ring-white transition-all h-full"
               >
-                {/* Nota: Se aplica color negro a las options para que se lean al abrir el selector */}
                 <option value="4" className="text-slate-800">4 PUESTOS</option>
                 <option value="5" className="text-slate-800">5 PUESTOS</option>
               </select>
             </div>
           </div>
 
-          {/* 🎯 SELECCIÓN DE RUTA */}
+          {/* SELECT DE RUTA */}
           <div className="relative">
             <MapPin className="absolute left-4 top-3.5 text-white/60 w-4 h-4" />
             <select
@@ -255,34 +276,43 @@ export default function RegistroChofer() {
           </div>
 
           <div className="border-t border-white/20 pt-4 space-y-3">
-            <div className="relative">
-              <Mail className="absolute left-4 top-3.5 text-white/60 w-5 h-5" />
-              <input 
-                type="email" name="email" placeholder="Correo electrónico" required
-                maxLength={30}
-                value={formData.email} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-12 pr-4 py-3.5 text-sm outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
-            </div>
+            <InputIcon icon={<Mail size={18}/>} name="email" placeholder="Correo (Máx 40)" val={formData.email} change={handleChange} maxLength={40} />
 
-            <div className="relative">
-              <Lock className="absolute left-4 top-3.5 text-white/60 w-5 h-5" />
-              <input 
-                type="password" name="password" placeholder="Contraseña (mín. 6)" required
-                minLength={6}
-                maxLength={20}
-                value={formData.password} onChange={handleChange}
-                className="w-full bg-transparent border border-white/30 rounded-xl pl-12 pr-4 py-3.5 text-sm outline-none text-white placeholder:text-white/60 focus:border-white focus:ring-1 focus:ring-white transition-all"
-              />
+            {/* SECTOR DE CONTRASEÑA BLINDADA */}
+            <div className="space-y-2">
+              <div className="flex items-center bg-white/5 rounded-2xl px-4 py-3 border border-white/10 focus-within:border-white/40 transition-all">
+                <Lock className="w-5 h-5 mr-3 opacity-40 shrink-0" />
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  name="password" 
+                  placeholder="Contraseña" 
+                  required 
+                  value={formData.password} 
+                  onChange={handleChange} 
+                  className="bg-transparent w-full outline-none text-sm placeholder:text-white/60" 
+                  maxLength={20}
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="ml-2 text-white/40 hover:text-white transition-colors shrink-0">
+                  {showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}
+                </button>
+              </div>
+              
+              {/* Checklist visual idéntico al de estudiantes */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 px-1 bg-black/10 rounded-xl p-3 border border-white/5 mt-2">
+                <CheckItem ok={validations.passwordLength} text="8 caracteres" />
+                <CheckItem ok={validations.passwordUpper} text="Mayúscula" />
+                <CheckItem ok={validations.passwordLower} text="Minúscula" />
+                <CheckItem ok={validations.passwordNumber} text="Número" />
+              </div>
             </div>
           </div>
 
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full mt-4 bg-white text-[#1566D0] py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2 hover:bg-blue-50 active:scale-[0.98] disabled:opacity-70"
+            className="w-full mt-6 bg-white text-[#1566D0] py-3.5 rounded-2xl font-bold text-sm transition-all shadow-lg flex items-center justify-center gap-2 hover:bg-blue-50 active:scale-[0.98] disabled:opacity-50"
           >
-            {loading ? <Loader2 className="animate-spin" size={18} /> : <><ShieldCheck size={18} /> Registrarse <ArrowRight size={16}/></>}
+            {loading ? <Loader2 className="animate-spin" size={18} /> : <><ShieldCheck size={18} /> REGISTRAR OPERADOR <ArrowRight size={16}/></>}
           </button>
         </form>
 

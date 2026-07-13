@@ -4,7 +4,7 @@ import {
   ShieldCheck, CreditCard, Image as ImageIcon, ArrowRight, 
   AlertTriangle, FileText, CheckCircle, Clock, Smile, ChevronDown, 
   LayoutDashboard, Settings, Navigation, MinusCircle, PlusCircle,
-  ShieldAlert, CheckCircle2, Power, Users, MessageSquare, Send, MapPin
+  ShieldAlert, CheckCircle2, Power, Users, MessageSquare, Send, MapPin, ListOrdered, Calendar, UserMinus
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -18,7 +18,6 @@ export default function DriverDashboard() {
   const fileInputRef = useRef(null);
   const kycInputRef = useRef(null); 
   
-  // Estados de Interfaz y Navegación Interna
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [showKycModal, setShowKycModal] = useState(false); 
@@ -32,36 +31,30 @@ export default function DriverDashboard() {
   const [vistaActiva, setVistaActiva] = useState("inicio"); 
   const [menuAbierto, setMenuAbierto] = useState(false);
 
-  // Estados para Reportes
   const [showReporteModal, setShowReporteModal] = useState(false);
   const [enviandoReporte, setEnviandoReporte] = useState(false);
   const [reporteData, setReporteData] = useState({ tipo: "Suministro de Gasolina", mensaje: "" });
 
-  // 🔥 NUEVOS ESTADOS: GESTIÓN DE RESPUESTA AL PASAJERO
   const [showAvisoModal, setShowAvisoModal] = useState(false);
   const [reservaActiva, setReservaActiva] = useState(null);
   const [avisoData, setAvisoData] = useState({ estado: "Confirmado", mensaje: "" });
   const [enviandoAviso, setEnviandoAviso] = useState(false);
 
-  // Estados de Datos Unificados
   const [choferData, setChoferData] = useState({ 
     id: "", nombre: "", apellido: "", avatar_url: null, cedula: "", telefono: "",
     placa_vehiculo: "", kyc_verificado: false, kyc_cedula_url: null, 
     kyc_vehiculo_url: null, kyc_rostro_url: null, capacidad_total: 4, 
-    puestos_libres: 4, estado: "disponible", hora_salida: null 
+    puestos_libres: 4, estado: "disponible", hora_salida: null, ruta: "Maraven - Centro", alerta_admin: null 
   });
   const [tempData, setTempData] = useState({ nombre: "", apellido: "" });
   
   const [reservasActivas, setReservasActivas] = useState([]);
+  const [historialViajes, setHistorialViajes] = useState([]); 
 
   useEffect(() => {
     const inicializarDashboard = async () => {
       setLoadingPagina(true);
-      const usuario = await fetchUser();
-      await fetchUnidades();
-      if (usuario) {
-        // En el rol de chofer, inicializar datos si es necesario (fetchReservas se hace en el otro hook)
-      }
+      await fetchUser();
       setLoadingPagina(false);
     };
     inicializarDashboard();
@@ -76,252 +69,203 @@ export default function DriverDashboard() {
   }, []);
 
   useEffect(() => {
-    if (!choferData?.placa_vehiculo) return;
+    if (!choferData?.placa_vehiculo || !choferData?.id) return;
 
-    const fetchReservas = async () => {
-      const { data } = await supabase
+    const fetchDataOperativa = async () => {
+      const { data: resData } = await supabase
         .from('reservas') 
         .select('*')
         .eq('placa_vehiculo', choferData.placa_vehiculo)
         .order('created_at', { ascending: false });
+      if (resData) setReservasActivas(resData);
+
+      const { data: histData } = await supabase
+        .from('historial_recorridos')
+        .select('*')
+        .eq('placa', choferData.placa_vehiculo)
+        .order('created_at', { ascending: false });
       
-      if (data) setReservasActivas(data);
+      if (histData) setHistorialViajes(histData);
     };
-    fetchReservas();
+    fetchDataOperativa();
 
-    const channelPuestos = supabase
-      .channel('sync-reservas-estudiantes')
-      .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'unidades', 
-          filter: `numero_unidad=eq.${choferData.placa_vehiculo}` 
-        }, 
+    // 🔥 SUSCRIPCIÓN BLINDADA A LA TABLA CHOFERES (Actualiza Puestos Libres, Alertas Admin y KYC en tiempo real)
+    const channelChofer = supabase
+      .channel('sync-chofer-puestos-realtime')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'choferes', filter: `id=eq.${choferData.id}` }, 
         (payload) => {
-          setChoferData(prev => ({ ...prev, puestos_libres: payload.new.puestos_libres }));
+          setChoferData(prev => ({ 
+            ...prev, 
+            puestos_libres: payload.new.puestos_libres,
+            alerta_admin: payload.new.alerta_admin,
+            kyc_verificado: payload.new.kyc_verificado // 🔥 Desbloquea la pantalla automáticamente si el admin lo aprueba
+          }));
         }
-      )
-      .subscribe();
+      ).subscribe();
 
-    const channelHistorial = supabase
-      .channel('sync-historial-reservas')
-      .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'reservas', 
-          filter: `placa_vehiculo=eq.${choferData.placa_vehiculo}` 
-        }, 
+    const channelReservas = supabase
+      .channel('sync-reservas-chofer-lista')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reservas', filter: `placa_vehiculo=eq.${choferData.placa_vehiculo}` }, 
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            setReservasActivas(prev => [payload.new, ...prev]);
-          } else if (payload.eventType === 'DELETE') {
-            setReservasActivas(prev => prev.filter(r => r.id !== payload.old.id));
-          } else if (payload.eventType === 'UPDATE') {
-            setReservasActivas(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
-          }
+          if (payload.eventType === 'INSERT') setReservasActivas(prev => [payload.new, ...prev]);
+          else if (payload.eventType === 'DELETE') setReservasActivas(prev => prev.filter(r => r.id !== payload.old.id));
+          else if (payload.eventType === 'UPDATE') setReservasActivas(prev => prev.map(r => r.id === payload.new.id ? payload.new : r));
         }
-      )
-      .subscribe();
+      ).subscribe();
 
     return () => { 
-      supabase.removeChannel(channelPuestos); 
-      supabase.removeChannel(channelHistorial); 
+      supabase.removeChannel(channelChofer); 
+      supabase.removeChannel(channelReservas); 
     };
-  }, [choferData?.placa_vehiculo]);
+  }, [choferData?.placa_vehiculo, choferData?.id]);
 
   const fetchUser = async () => {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError || !user) {
-        navigate("/acceso-chofer");
-        return null;
-      }
+      if (authError || !user) { navigate("/acceso-chofer"); return null; }
 
-      const { data, error: dbError } = await supabase
-        .from('choferes')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-
+      const { data, error: dbError } = await supabase.from('choferes').select('*').eq('id', user.id).maybeSingle();
       if (dbError) throw dbError;
-
       if (data) {
         setChoferData(data);
         setTempData({ nombre: data.nombre, apellido: data.apellido });
         return data.id;
       }
-    } catch (err) {
-      console.error("Error cargando sesión del operador:", err.message);
-    }
+    } catch (err) { console.error("Error cargando sesión:", err.message); }
     return null;
   };
 
-  const fetchUnidades = async () => {
-    // Si necesitas traer datos globales de unidades
-  };
-
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut({ scope: 'local' }); 
-      navigate("/");
-    } catch (err) { navigate("/"); }
+    try { await supabase.auth.signOut({ scope: 'local' }); navigate("/"); } 
+    catch (err) { navigate("/"); }
   };
 
   const updatePuestos = async (nuevoValor) => {
-    if (!choferData?.kyc_verificado) return;
-    if (nuevoValor < 0 || nuevoValor > choferData.capacidad_total) return;
-    
+    if (!choferData?.kyc_verificado || nuevoValor < 0 || nuevoValor > choferData.capacidad_total) return;
+    setChoferData(prev => ({ ...prev, puestos_libres: nuevoValor }));
     const { error } = await supabase.from('choferes').update({ puestos_libres: nuevoValor }).eq('id', choferData.id);
-      
-    try {
-      await supabase.from('unidades').update({ puestos_libres: nuevoValor }).eq('numero_unidad', choferData.placa_vehiculo);
-    } catch (e) { console.error(e); }
-
-    if (!error) setChoferData({ ...choferData, puestos_libres: nuevoValor });
+    try { await supabase.from('unidades').update({ puestos_libres: nuevoValor }).eq('numero_unidad', choferData.placa_vehiculo); } catch (e) { console.error(e); }
   };
 
   const toggleRuta = async () => {
     if (!choferData?.kyc_verificado) return;
-    const nuevoEstado = choferData.estado === 'disponible' ? 'en ruta' : 'disponible';
-    const nuevaHora = nuevoEstado === 'en ruta' ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null;
     
-    const { error } = await supabase.from('choferes').update({ estado: nuevoEstado, hora_salida: nuevaHora }).eq('id', choferData.id);
-      
+    const estadoActual = choferData.estado;
+    const nuevoEstado = estadoActual === 'disponible' ? 'en ruta' : 'disponible';
+    const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const nuevaHoraSalida = nuevoEstado === 'en ruta' ? horaActual : null;
+
     try {
+      if (nuevoEstado === 'disponible') {
+        const pasajerosLlevados = choferData.capacidad_total - choferData.puestos_libres;
+        
+        const { data: nuevoRegistro, error: histError } = await supabase.from('historial_recorridos').insert([{
+          chofer_id: choferData.id,
+          placa: choferData.placa_vehiculo, 
+          chofer_nombre: `${choferData.nombre} ${choferData.apellido}`, 
+          ruta: choferData.ruta || "Ruta General",
+          hora_salida: choferData.hora_salida || "--:--",
+          hora_llegada: horaActual,
+          pasajeros_transportados: pasajerosLlevados,
+          fecha: new Date().toISOString().split('T')[0] 
+        }]).select().single();
+
+        if (histError) {
+          console.error("Error en Supabase:", histError);
+          alert(`¡Trayecto finalizado con ${pasajerosLlevados} pasajeros!\nNota: Ocurrió un error guardando el historial: ${histError.message}`);
+        } else if (nuevoRegistro) {
+          setHistorialViajes(prev => [nuevoRegistro, ...prev]);
+          alert(`¡Trayecto finalizado con éxito!\nPasajeros transportados: ${pasajerosLlevados}`);
+        }
+
+        await supabase.from('reservas').delete().eq('placa_vehiculo', choferData.placa_vehiculo);
+        setReservasActivas([]);
+      }
+
+      const puestosNuevos = nuevoEstado === 'disponible' ? choferData.capacidad_total : choferData.puestos_libres;
+
+      await supabase.from('choferes').update({ 
+        estado: nuevoEstado, 
+        hora_salida: nuevaHoraSalida,
+        puestos_libres: puestosNuevos
+      }).eq('id', choferData.id);
+        
       const { data: unidadExistente } = await supabase.from('unidades').select('id').eq('numero_unidad', choferData.placa_vehiculo).maybeSingle();
 
       if (unidadExistente) {
         await supabase.from('unidades').update({
-          estado: nuevoEstado,
-          hora_salida: nuevaHora,
-          puestos_libres: choferData.puestos_libres,
-          capacidad_total: choferData.capacidad_total
+          estado: nuevoEstado, hora_salida: nuevaHoraSalida, puestos_libres: puestosNuevos, capacidad_total: choferData.capacidad_total
         }).eq('id', unidadExistente.id);
       } else {
         await supabase.from('unidades').insert([{
-          numero_unidad: choferData.placa_vehiculo,
-          capacidad_total: choferData.capacidad_total,
-          puestos_libres: choferData.puestos_libres,
-          hora_salida: nuevaHora,
-          estado: nuevoEstado
+          numero_unidad: choferData.placa_vehiculo, capacidad_total: choferData.capacidad_total, puestos_libres: puestosNuevos, hora_salida: nuevaHoraSalida, estado: nuevoEstado
         }]);
       }
-    } catch(e) {
-      console.error("Error sincronizando unidades:", e);
-    }
 
-    if (!error) setChoferData({ ...choferData, estado: nuevoEstado, hora_salida: nuevaHora });
+      setChoferData({ ...choferData, estado: nuevoEstado, hora_salida: nuevaHoraSalida, puestos_libres: puestosNuevos });
+    } catch(e) {
+      alert("Error cambiando ruta: " + e.message);
+    }
   };
 
-  const marcarComoAbordado = async (reservaId) => {
+  const removerPasajero = async (reservaId, puestosOcupados) => {
     try {
       await supabase.from('reservas').delete().eq('id', reservaId);
       setReservasActivas(prev => prev.filter(r => r.id !== reservaId));
-    } catch(e) {
-      console.error("Error al marcar como abordado", e);
-    }
+      
+      const nuevosPuestos = Math.min(choferData.capacidad_total, choferData.puestos_libres + puestosOcupados);
+      updatePuestos(nuevosPuestos);
+      
+    } catch(e) { console.error("Error al remover pasajero", e); }
   };
 
   const enviarAvisoEstudiante = async () => {
     if (!reservaActiva) return;
     setEnviandoAviso(true);
-    
     try {
-      const { error } = await supabase.from('reservas').update({
-        estado_conductor: avisoData.estado,
-        mensaje_conductor: avisoData.mensaje
-      }).eq('id', reservaActiva.id);
-      
-      if (error) throw error;
-      
-      // Actualizamos visualmente la lista de inmediato
+      await supabase.from('reservas').update({ estado_conductor: avisoData.estado, mensaje_conductor: avisoData.mensaje }).eq('id', reservaActiva.id);
       setReservasActivas(prev => prev.map(r => r.id === reservaActiva.id ? {...r, estado_conductor: avisoData.estado, mensaje_conductor: avisoData.mensaje} : r));
-      
-      setShowAvisoModal(false);
-      setReservaActiva(null);
-      setAvisoData({ estado: "Confirmado", mensaje: "" });
-    } catch (err) {
-      alert("Error avisando al estudiante: " + err.message);
-    } finally {
-      setEnviandoAviso(false);
-    }
+      setShowAvisoModal(false); setReservaActiva(null); setAvisoData({ estado: "Confirmado", mensaje: "" });
+    } catch (err) { alert(err.message); } finally { setEnviandoAviso(false); }
   };
 
   const abrirModalAviso = (reserva) => {
     setReservaActiva(reserva);
-    setAvisoData({ 
-      estado: reserva.estado_conductor && reserva.estado_conductor !== 'Pendiente' ? reserva.estado_conductor : "Confirmado", 
-      mensaje: reserva.mensaje_conductor || "" 
-    });
+    setAvisoData({ estado: reserva.estado_conductor && reserva.estado_conductor !== 'Pendiente' ? reserva.estado_conductor : "Confirmado", mensaje: reserva.mensaje_conductor || "" });
     setShowAvisoModal(true);
   };
 
   const enviarReporteOperativo = async () => {
     setEnviandoReporte(true);
     try {
-      const { error } = await supabase.from('reportes_operativos').insert([{
-        placa_vehiculo: choferData.placa_vehiculo,
-        tipo_reporte: reporteData.tipo,
-        mensaje: reporteData.mensaje,
-        emisor: `${choferData.nombre} ${choferData.apellido}`
-      }]);
-      if (error) throw error;
-      
-      alert("¡Reporte de incidencia enviado con éxito al chequeador!");
-      setShowReporteModal(false);
-      setReporteData({ tipo: "Suministro de Gasolina", mensaje: "" });
-    } catch (err) {
-      alert("Hubo un error enviando el reporte: " + err.message);
-    } finally {
-      setEnviandoReporte(false);
-    }
+      await supabase.from('reportes_operativos').insert([{ placa_vehiculo: choferData.placa_vehiculo, tipo_reporte: reporteData.tipo, mensaje: reporteData.mensaje, emisor: `${choferData.nombre} ${choferData.apellido}` }]);
+      alert("¡Reporte enviado exitosamente!");
+      setShowReporteModal(false); setReporteData({ tipo: "Suministro de Gasolina", mensaje: "" });
+    } catch (err) { alert(err.message); } finally { setEnviandoReporte(false); }
   };
 
   const handleUploadFile = async (file, bucketKey, updateField) => {
     if (!file) return;
     setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${bucketKey}-${choferData.id}-${Date.now()}.${fileExt}`;
-      const filePath = `kyc_choferes/${fileName}`;
-
-      const { error: upErr } = await supabase.storage.from('carnets').upload(filePath, file);
+      const fileName = `${bucketKey}-${choferData.id}-${Date.now()}.${file.name.split('.').pop()}`;
+      const { error: upErr } = await supabase.storage.from('carnets').upload(`kyc_choferes/${fileName}`, file);
       if (upErr) throw upErr;
-
-      const { data: { publicUrl } } = supabase.storage.from('carnets').getPublicUrl(filePath);
-      
+      const { data: { publicUrl } } = supabase.storage.from('carnets').getPublicUrl(`kyc_choferes/${fileName}`);
       const updates = { [updateField]: publicUrl };
-      if (bucketKey !== 'avatar') {
-        updates.kyc_verificado = false; 
-      }
-
-      const { error: dbErr } = await supabase.from('choferes').update(updates).eq('id', choferData.id);
-      if (dbErr) throw dbErr;
-
+      if (bucketKey !== 'avatar') updates.kyc_verificado = false; 
+      await supabase.from('choferes').update(updates).eq('id', choferData.id);
       setChoferData(prev => ({ ...prev, ...updates }));
-      alert(`Archivo de ${bucketKey.toUpperCase()} procesado correctamente.`);
-      setShowKycModal(false);
-    } catch (e) { 
-      alert("Error en proceso: " + e.message); 
-    } finally { 
-      setUploading(false); 
-      setShowPhotoOptions(false); 
-      stopCamera(); 
-    }
+      alert(`Archivo procesado.`); setShowKycModal(false);
+    } catch (e) { alert(e.message); } finally { setUploading(false); setShowPhotoOptions(false); stopCamera(); }
   };
 
   const startCamera = async () => {
-    setShowPhotoOptions(false);
-    setShowCamera(true);
+    setShowPhotoOptions(false); setShowCamera(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: kycTypeActive === "rostro" || kycTypeActive === "avatar" ? "user" : "environment" } 
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: kycTypeActive === "rostro" || kycTypeActive === "avatar" ? "user" : "environment" } });
       if (videoRef.current) videoRef.current.srcObject = stream;
-    } catch (err) { 
-      alert("Sin acceso a cámara."); 
-      setShowCamera(false); 
-    }
+    } catch (err) { alert("Sin acceso a cámara."); setShowCamera(false); }
   };
 
   const stopCamera = () => {
@@ -331,24 +275,13 @@ export default function DriverDashboard() {
 
   const capturePhoto = () => {
     const context = canvasRef.current.getContext('2d');
-    canvasRef.current.width = videoRef.current.videoWidth; 
-    canvasRef.current.height = videoRef.current.videoHeight;
-    
-    if (kycTypeActive === "rostro" || kycTypeActive === "avatar") {
-      context.translate(canvasRef.current.width, 0); 
-      context.scale(-1, 1);
-    }
-    
+    canvasRef.current.width = videoRef.current.videoWidth; canvasRef.current.height = videoRef.current.videoHeight;
+    if (kycTypeActive === "rostro" || kycTypeActive === "avatar") { context.translate(canvasRef.current.width, 0); context.scale(-1, 1); }
     context.drawImage(videoRef.current, 0, 0);
     canvasRef.current.toBlob(async (blob) => {
       const file = new File([blob], "kyc_capture.png", { type: "image/png" });
-      
-      if (kycTypeActive === "avatar") {
-        await handleUploadFile(file, 'avatar', 'avatar_url');
-      } else {
-        const campoDB = kycTypeActive === "cedula" ? "kyc_cedula_url" : kycTypeActive === "vehiculo" ? "kyc_vehiculo_url" : "kyc_rostro_url";
-        await handleUploadFile(file, kycTypeActive, campoDB);
-      }
+      if (kycTypeActive === "avatar") await handleUploadFile(file, 'avatar', 'avatar_url');
+      else await handleUploadFile(file, kycTypeActive, kycTypeActive === "cedula" ? "kyc_cedula_url" : kycTypeActive === "vehiculo" ? "kyc_vehiculo_url" : "kyc_rostro_url");
     }, 'image/png');
   };
 
@@ -359,431 +292,183 @@ export default function DriverDashboard() {
     setIsSaving(false);
   };
 
-  const totalSubidos = [choferData?.kyc_cedula_url, choferData?.kyc_vehiculo_url, choferData?.kyc_rostro_url].filter(Boolean).length;
+  const hoyStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  
+  const obtenerFechaSegura = (viaje) => {
+    if (viaje.fecha) return new Date(viaje.fecha);
+    if (viaje.created_at) return new Date(viaje.created_at);
+    return new Date(); 
+  };
 
-  if (loadingPagina) {
-    return (
-      <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center text-white font-black italic gap-4">
-        <Loader2 className="animate-spin w-10 h-10" />
-        <span className="tracking-widest text-xs uppercase">Sincronizando Sistema...</span>
-      </div>
-    );
-  }
+  const viajesHoy = historialViajes.filter(v => obtenerFechaSegura(v).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) === hoyStr);
+  const totalPasajerosHoy = viajesHoy.reduce((acc, curr) => acc + (curr.pasajeros_transportados || 0), 0);
+
+  const historialAgrupado = historialViajes.reduce((groups, viaje) => {
+    const dateObj = obtenerFechaSegura(viaje);
+    const dateStr = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+    const key = dateStr === new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }) ? "Hoy" : dateStr;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(viaje);
+    return groups;
+  }, {});
+
+  if (loadingPagina) return <div className="min-h-screen bg-[#1566D0] flex flex-col items-center justify-center text-white"><Loader2 className="animate-spin w-10 h-10 mb-4" /><span className="text-xs uppercase tracking-widest font-black">Sincronizando...</span></div>;
 
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
       
-      {/* --- MODAL PARA AVISAR AL ESTUDIANTE --- */}
-      {showAvisoModal && reservaActiva && (
-        <div className="fixed inset-0 z-[160] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => setShowAvisoModal(false)}></div>
-          <div className="relative bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200 text-left">
-            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="text-blue-500" size={24} />
-                <h3 className="text-lg font-black italic uppercase leading-none">Avisar a Pasajero</h3>
-              </div>
-              <button onClick={() => setShowAvisoModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button>
-            </div>
-            
-            <div className="mb-5">
-              <p className="text-[10px] font-black uppercase text-blue-400">Estudiante</p>
-              <p className="font-bold text-slate-800 text-sm truncate">{reservaActiva.nombre_estudiante}</p>
-              <p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1">
-                Ubicación: <span className="text-blue-600">{reservaActiva.ubicacion || "N/A"}</span>
-              </p>
-            </div>
+      {/* 🔥 NUEVO: MODAL GIGANTE DE ALERTA DE DESPACHO DESDE ADMINISTRACIÓN */}
+      {choferData?.alerta_admin && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-red-900/90 backdrop-blur-md">
+          <div className="bg-white text-slate-800 w-full max-w-md rounded-[40px] shadow-2xl p-8 animate-in zoom-in duration-300 border-4 border-red-500 text-center">
+            <ShieldAlert size={60} className="mx-auto text-red-500 mb-4 animate-bounce" />
+            <h2 className="text-3xl font-black italic uppercase text-red-600 mb-2 leading-none">¡ALERTA DE DESPACHO!</h2>
+            <p className="text-sm font-bold text-slate-600 mb-6 bg-red-50 p-4 rounded-2xl border border-red-100">
+              {choferData.alerta_admin}
+            </p>
+            <button
+              onClick={async () => {
+                 const horaActual = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                 await supabase.from('choferes').update({ alerta_admin: null, estado: 'en ruta', hora_salida: horaActual }).eq('id', choferData.id);
+                 await supabase.from('unidades').update({ estado: 'en ruta', hora_salida: horaActual }).eq('numero_unidad', choferData.placa_vehiculo);
+                 setChoferData({...choferData, alerta_admin: null, estado: 'en ruta', hora_salida: horaActual});
+              }}
+              className="w-full bg-red-600 hover:bg-red-700 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+            >
+              Confirmar y Cubrir Ruta
+            </button>
+          </div>
+        </div>
+      )}
 
+      {/* MODALES REUTILIZADOS */}
+      {showAvisoModal && reservaActiva && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-6 bg-[#0A1D3D]/90 backdrop-blur-sm">
+          <div className="bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6 border-b pb-4"><div className="flex items-center gap-2"><MessageSquare className="text-blue-500" size={24} /><h3 className="text-lg font-black italic uppercase leading-none">Avisar a Pasajero</h3></div><button onClick={() => setShowAvisoModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button></div>
+            <div className="mb-5"><p className="text-[10px] font-black uppercase text-blue-400">Estudiante</p><p className="font-bold text-slate-800 text-sm truncate">{reservaActiva.nombre_estudiante}</p><p className="text-[10px] font-bold text-slate-500 mt-1 flex items-center gap-1"><MapPin size={12}/> Ubicación: <span className="text-blue-600">{reservaActiva.ubicacion || "N/A"}</span></p></div>
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] font-black uppercase text-blue-400">Estado de Recogida</label>
+                <label className="text-[10px] font-black uppercase text-blue-400">Estado</label>
                 <div className="flex gap-2 mt-2">
-                  <button 
-                    onClick={() => setAvisoData({...avisoData, estado: "Confirmado"})}
-                    className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1 border-2 ${avisoData.estado === "Confirmado" ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400'}`}
-                  >
-                    {avisoData.estado === "Confirmado" && <Check size={14}/>} Confirmado
-                  </button>
-                  <button 
-                    onClick={() => setAvisoData({...avisoData, estado: "En camino"})}
-                    className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all flex items-center justify-center gap-1 border-2 ${avisoData.estado === "En camino" ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-50 border-transparent text-gray-400'}`}
-                  >
-                    {avisoData.estado === "En camino" && <Navigation size={14}/>} En camino
-                  </button>
+                  <button onClick={() => setAvisoData({...avisoData, estado: "Confirmado"})} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase border-2 flex items-center justify-center gap-1 ${avisoData.estado === "Confirmado" ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-gray-50 border-transparent text-gray-400'}`}>{avisoData.estado === "Confirmado" && <Check size={14}/>} Confirmado</button>
+                  <button onClick={() => setAvisoData({...avisoData, estado: "En camino"})} className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase border-2 flex items-center justify-center gap-1 ${avisoData.estado === "En camino" ? 'bg-orange-100 border-orange-500 text-orange-700' : 'bg-gray-50 border-transparent text-gray-400'}`}>{avisoData.estado === "En camino" && <Navigation size={14}/>} En camino</button>
                 </div>
               </div>
-
-              <div>
-                <label className="text-[10px] font-black uppercase text-blue-400">Mensaje para el estudiante</label>
-                <textarea 
-                  value={avisoData.mensaje}
-                  onChange={e => setAvisoData({...avisoData, mensaje: e.target.value})}
-                  rows="3"
-                  placeholder="Ej: Ya estoy llegando a la parada, atento..."
-                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                ></textarea>
-              </div>
-
-              <button 
-                onClick={enviarAvisoEstudiante} 
-                disabled={enviandoAviso}
-                className="w-full bg-[#1566D0] hover:bg-blue-800 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                {enviandoAviso ? <Loader2 className="animate-spin" /> : <><Send size={16}/> Enviar Aviso</>}
-              </button>
+              <div><label className="text-[10px] font-black uppercase text-blue-400">Mensaje</label><textarea value={avisoData.mensaje} onChange={e => setAvisoData({...avisoData, mensaje: e.target.value})} rows="3" placeholder="Ej: Atento a la parada..." className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-2 resize-none outline-none text-sm"></textarea></div>
+              <button onClick={enviarAvisoEstudiante} disabled={enviandoAviso} className="w-full bg-[#1566D0] hover:bg-blue-800 text-white py-4 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2">{enviandoAviso ? <Loader2 className="animate-spin" /> : <><Send size={16}/> Enviar Aviso</>}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL DE REPORTES INCIDENCIAS --- */}
       {showReporteModal && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => setShowReporteModal(false)}></div>
-          <div className="relative bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200 text-left">
-            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="text-orange-500" size={24} />
-                <h3 className="text-lg font-black italic uppercase leading-none">Reporte Operativo</h3>
-              </div>
-              <button onClick={() => setShowReporteModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button>
-            </div>
-            
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-[#0A1D3D]/90 backdrop-blur-sm">
+          <div className="bg-white text-[#0D47A1] w-full max-w-sm rounded-[38px] shadow-2xl p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6 border-b pb-4"><div className="flex items-center gap-2"><AlertTriangle className="text-orange-500" size={24} /><h3 className="text-lg font-black italic uppercase leading-none">Reporte Operativo</h3></div><button onClick={() => setShowReporteModal(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={16}/></button></div>
             <div className="space-y-4">
-              <div>
-                <label className="text-[10px] font-black uppercase text-blue-400">Tipo de Incidencia</label>
-                <select 
-                  value={reporteData.tipo} 
-                  onChange={e => setReporteData({...reporteData, tipo: e.target.value})}
-                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-1 focus:ring-2 focus:ring-orange-500 outline-none"
-                >
-                  <option value="Suministro de Gasolina">⛽ Suministro de Gasolina</option>
-                  <option value="Falla Mecánica">🔧 Falla Mecánica</option>
-                  <option value="Retraso en Vía">🚦 Retraso / Tráfico Pesado</option>
-                  <option value="Incidencia con Pasajero">⚠️ Incidencia con Pasajero</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-black uppercase text-blue-400">Detalles adicionales</label>
-                <textarea 
-                  value={reporteData.mensaje}
-                  onChange={e => setReporteData({...reporteData, mensaje: e.target.value})}
-                  rows="3"
-                  placeholder="Ej: Estoy en la bomba Maraven, demoro 40 minutos..."
-                  className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-3 font-bold text-slate-700 mt-1 resize-none focus:ring-2 focus:ring-orange-500 outline-none"
-                ></textarea>
-              </div>
-              <button 
-                onClick={enviarReporteOperativo} 
-                disabled={enviandoReporte || !reporteData.mensaje}
-                className="w-full bg-orange-500 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 transition-all disabled:opacity-50"
-              >
-                {enviandoReporte ? <Loader2 className="animate-spin mx-auto" /> : "Enviar al Chequeador"}
+              <select value={reporteData.tipo} onChange={e => setReporteData({...reporteData, tipo: e.target.value})} className="w-full bg-gray-50 border-2 rounded-xl px-4 py-3 font-bold text-slate-700"><option>⛽ Suministro de Gasolina</option><option>🔧 Falla Mecánica</option><option>🚦 Retraso en Vía</option><option>⚠️ Incidencia con Pasajero</option></select>
+              <textarea value={reporteData.mensaje} onChange={e => setReporteData({...reporteData, mensaje: e.target.value})} rows="3" placeholder="Detalles..." className="w-full bg-gray-50 border-2 rounded-xl px-4 py-3 font-bold text-slate-700 resize-none"></textarea>
+              <button onClick={enviarReporteOperativo} disabled={enviandoReporte || !reporteData.mensaje} className="w-full bg-orange-500 text-white py-4 rounded-2xl font-black text-xs uppercase disabled:opacity-50">
+                {enviandoReporte ? <Loader2 className="animate-spin mx-auto" /> : "Enviar Reporte"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* CÁMARA EN VIVO */}
       {showCamera && (
-        <div className="fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center p-6">
-          <button onClick={stopCamera} className="absolute top-6 right-6 p-4 bg-white/10 rounded-full hover:bg-white/20 text-white shadow-xl"><X size={28} /></button>
-          <video ref={videoRef} autoPlay playsInline className="max-w-full max-h-[75vh] rounded-[32px] border-4 border-white object-cover" />
-          <button onClick={capturePhoto} className="mt-6 p-6 bg-white text-[#1566D0] rounded-full shadow-2xl active:scale-95 transition-all">
-            <Camera size={32} />
-          </button>
-        </div>
+        <div className="fixed inset-0 bg-black z-[200] flex flex-col items-center justify-center p-6"><button onClick={stopCamera} className="absolute top-6 right-6 p-4 bg-white/10 rounded-full text-white"><X size={28} /></button><video ref={videoRef} autoPlay playsInline className="max-w-full max-h-[75vh] rounded-[32px] border-4 border-white object-cover" /><button onClick={capturePhoto} className="mt-6 p-6 bg-white text-[#1566D0] rounded-full"><Camera size={32} /></button></div>
       )}
 
-      {/* MODAL TRIPLE SELECCIÓN KYC */}
       {showKycModal && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => !uploading && setShowKycModal(false)}></div>
-          <div className="relative bg-[#0D47A1] text-white w-full max-w-sm rounded-[38px] shadow-2xl p-8 border border-white/10 animate-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
-              <div className="flex items-center gap-2 text-blue-300">
-                <FileText size={20} />
-                <h3 className="text-sm font-black uppercase tracking-wider">Subir {kycTypeActive.toUpperCase()}</h3>
-              </div>
-              <button disabled={uploading} onClick={() => setShowKycModal(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={16}/></button>
-            </div>
-            
-            <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-2xl flex gap-3 text-left">
-              <AlertTriangle size={18} className="shrink-0 text-amber-400" />
-              <p className="text-[11px] font-medium leading-relaxed">
-                {kycTypeActive === "cedula" && "Sube una foto legible de tu cédula de identidad nacional."}
-                {kycTypeActive === "vehiculo" && `Captura tu unidad donde se distinga claramente la placa: [${choferData?.placa_vehiculo || "N/A"}].`}
-                {kycTypeActive === "rostro" && "Tómate una selfie frontal despejada para validar tu perfil."}
-              </p>
-            </div>
-
-            {uploading ? (
-              <div className="text-center py-10 space-y-3">
-                <Loader2 className="animate-spin text-orange-400 mx-auto" size={32} />
-                <span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Subiendo Requisito...</span>
-              </div>
-            ) : (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-6 bg-[#0A1D3D]/90 backdrop-blur-sm">
+          <div className="bg-[#0D47A1] text-white w-full max-w-sm rounded-[38px] p-8 border border-white/10 animate-in zoom-in">
+            <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4"><h3 className="text-sm font-black uppercase">Subir {kycTypeActive}</h3><button onClick={() => setShowKycModal(false)} className="p-2 bg-white/5 rounded-full"><X size={16}/></button></div>
+            {uploading ? <Loader2 className="animate-spin mx-auto mb-4" size={32} /> : (
               <div className="space-y-3">
-                <button onClick={startCamera} className="w-full bg-white/5 hover:bg-blue-600 border border-white/10 text-white p-5 rounded-2xl flex items-center justify-between group transition-all">
-                  <div className="flex flex-col text-left"><span className="text-sm font-black uppercase tracking-wide">Capturar Foto</span><span className="text-[10px] text-blue-300 font-bold uppercase">Usar cámara integrada</span></div>
-                  <Camera size={20} className="text-blue-400 group-hover:text-white" />
-                </button>
-                <button onClick={() => kycInputRef.current.click()} className="w-full bg-white/5 hover:bg-blue-600 border border-white/10 text-white p-5 rounded-2xl flex items-center justify-between group transition-all">
-                  <div className="flex flex-col text-left"><span className="text-sm font-black uppercase tracking-wide">Cargar de Archivos</span><span className="text-[10px] text-blue-300 font-bold uppercase">Formatos: JPG, PNG</span></div>
-                  <ImageIcon size={20} className="text-blue-400 group-hover:text-white" />
-                </button>
+                <button onClick={startCamera} className="w-full bg-white/5 p-5 rounded-2xl flex items-center justify-between"><span className="text-sm font-black uppercase">Cámara</span><Camera size={20} /></button>
+                <button onClick={() => kycInputRef.current.click()} className="w-full bg-white/5 p-5 rounded-2xl flex items-center justify-between"><span className="text-sm font-black uppercase">Galería</span><ImageIcon size={20} /></button>
               </div>
             )}
-            <input type="file" ref={kycInputRef} className="hidden" accept="image/*" onChange={(e) => {
-              const campoDB = kycTypeActive === "cedula" ? "kyc_cedula_url" : kycTypeActive === "vehiculo" ? "kyc_vehiculo_url" : "kyc_rostro_url";
-              handleUploadFile(e.target.files[0], kycTypeActive, campoDB);
-            }} />
+            <input type="file" ref={kycInputRef} className="hidden" accept="image/*" onChange={(e) => handleUploadFile(e.target.files[0], kycTypeActive, kycTypeActive === "cedula" ? "kyc_cedula_url" : kycTypeActive === "vehiculo" ? "kyc_vehiculo_url" : "kyc_rostro_url")} />
           </div>
         </div>
       )}
 
-      {/* MODAL PERFIL COMPLETO */}
       {isProfileModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-[#0D47A1]/80 backdrop-blur-xl" onClick={() => !showCamera && setIsProfileModalOpen(false)}></div>
-          <div className="relative bg-white text-[#0D47A1] w-full max-w-sm rounded-[45px] overflow-hidden shadow-2xl animate-in zoom-in duration-200">
-            <div className="bg-[#1566D0] p-8 pb-24 text-white relative">
-              <button onClick={() => { stopCamera(); setIsProfileModalOpen(false); }} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full hover:bg-white/20"><X size={20} /></button>
-              <h2 className="text-2xl font-black italic uppercase tracking-tighter">Mi Perfil Operador</h2>
-            </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0D47A1]/80 backdrop-blur-xl">
+          <div className="bg-white text-[#0D47A1] w-full max-w-sm rounded-[45px] overflow-hidden">
+            <div className="bg-[#1566D0] p-8 pb-24 text-white relative"><button onClick={() => setIsProfileModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white/10 rounded-full"><X size={20} /></button><h2 className="text-2xl font-black italic uppercase">Mi Perfil</h2></div>
             <div className="px-8 pb-10 -mt-20 text-center">
-              <div className="relative w-40 h-40 mx-auto mb-6">
-                <div className="w-40 h-40 rounded-[38px] bg-gray-100 overflow-hidden border-4 border-white shadow-2xl flex items-center justify-center">
-                  {choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : <User size={60} className="text-blue-200" />}
-                  {uploading && <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded-[38px]"><Loader2 className="animate-spin" /></div>}
-                </div>
-                <div className="absolute -bottom-2 -right-2 flex flex-col items-end">
-                  {showPhotoOptions && (
-                    <div className="bg-white rounded-2xl shadow-2xl p-2 mb-2 border border-gray-100 flex flex-col gap-1 z-10 text-left">
-                      <button onClick={() => { setKycTypeActive("avatar"); startCamera(); }} className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase"><Camera size={14} /> Cámara</button>
-                      <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase"><ImageIcon size={14} /> Galería</button>
-                    </div>
-                  )}
-                  <button onClick={() => setShowPhotoOptions(!showPhotoOptions)} className="bg-blue-600 text-white p-4 rounded-2xl shadow-xl hover:scale-110 transition-all"><Camera size={20} /></button>
-                </div>
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleUploadFile(e.target.files[0], 'avatar', 'avatar_url')} />
-              </div>
-              
-              <div className="space-y-6">
-                {isEditing ? (
-                  <div className="space-y-3">
-                    <input className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-2 font-bold text-slate-800" value={tempData.nombre} onChange={e => setTempData({...tempData, nombre: e.target.value})} />
-                    <input className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-2 font-bold text-slate-800" value={tempData.apellido} onChange={e => setTempData({...tempData, apellido: e.target.value})} />
-                    <button onClick={handleUpdateNames} className="w-full bg-emerald-500 text-white py-3 rounded-xl font-black text-[10px] uppercase transition-all">{isSaving ? "Guardando..." : "Confirmar"}</button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-left">
-                      <p className="text-[10px] font-bold uppercase text-blue-400 mb-1">Conductor</p>
-                      <h3 className="text-2xl font-black italic uppercase leading-none">
-                        {choferData?.nombre || "Cargando..."} {choferData?.apellido || ""}
-                      </h3>
-                    </div>
-                    <div className="text-left grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
-                      <div>CÉDULA: <span className="text-slate-800">{choferData?.cedula || "N/A"}</span></div>
-                      <div>PLACA: <span className="text-slate-800">{choferData?.placa_vehiculo || "N/A"}</span></div>
-                    </div>
-                    <button onClick={() => setIsEditing(true)} className="w-full bg-gray-50 text-[#0D47A1] py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all"><Edit2 size={14} /> Editar Datos</button>
-                  </>
-                )}
-              </div>
+              <div className="relative w-40 h-40 mx-auto mb-6"><div className="w-full h-full rounded-[38px] bg-gray-100 overflow-hidden border-4 border-white">{choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : <User size={60} className="text-blue-200 m-auto mt-10" />}</div></div>
+              <div className="text-left grid grid-cols-2 gap-2 text-xs font-bold text-slate-500"><div>CÉDULA: <span className="text-slate-800">{choferData?.cedula}</span></div><div>PLACA: <span className="text-slate-800">{choferData?.placa_vehiculo}</span></div></div>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- BACKDROP GRIS DE FONDO CUANDO EL SIDEBAR ESTÁ ABIERTO --- */}
-      {isMenuOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 transition-opacity duration-300" />
-      )}
-
-      {/* --- SIDEBAR DESPLEGABLE CHOFER --- */}
-      <div 
-        ref={sidebarRef} 
-        className={`fixed inset-y-0 left-0 w-80 bg-[#0D47A1] z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-500 flex flex-col p-8 shadow-2xl border-r border-white/5`}
-      >
-        <div className="flex justify-between items-center mb-6">
-          <CreditCard size={20} className="text-blue-300" />
-          <button 
-            onClick={() => setIsMenuOpen(false)} 
-            className="p-2.5 bg-white/10 text-white rounded-xl hover:bg-white/20 transition-all active:scale-95 flex items-center justify-center"
-          >
-            <X size={20} strokeWidth={2.5} />
-          </button>
-        </div>
-        
-        <div onClick={() => { setIsProfileModalOpen(true); setIsMenuOpen(false); }} className="bg-white/5 rounded-[32px] p-5 border border-white/10 mb-4 text-center cursor-pointer active:scale-[0.99] group transition-all">
-          <div className="w-20 h-20 rounded-2xl bg-blue-500 mx-auto mb-3 overflow-hidden border-2 border-white/20 group-hover:border-white">
-            {choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : <User className="m-auto mt-4 text-white" size={40} />}
+      {/* SIDEBAR & NAVBAR */}
+      {isMenuOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40" onClick={() => setIsMenuOpen(false)}/>}
+      <div className={`fixed inset-y-0 left-0 w-80 bg-[#0D47A1] z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-500 flex flex-col p-8 border-r border-white/5`}>
+        <div className="flex justify-between items-center mb-6"><CreditCard size={20} className="text-blue-300" /><button onClick={() => setIsMenuOpen(false)} className="p-2.5 bg-white/10 rounded-xl"><X size={20} /></button></div>
+        <div className="bg-white/5 rounded-[32px] p-5 mb-4 text-center cursor-pointer" onClick={() => { setIsProfileModalOpen(true); setIsMenuOpen(false); }}>
+          <div className="w-20 h-20 bg-blue-500 mx-auto mb-3 rounded-2xl overflow-hidden">{choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : <User className="m-auto mt-4" size={40} />}</div>
+          <h3 className="font-black italic uppercase truncate mb-1">{choferData?.nombre}</h3>
+          <p className="text-[10px] text-blue-300 font-black uppercase tracking-widest mb-3">Operador</p>
+          <div className="flex justify-center mb-3">
+            {choferData?.kyc_verificado ? (
+              <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 px-4 py-1.5 rounded-xl flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest"><CheckCircle size={12} /> Verificado</div>
+            ) : (
+              <div className="bg-amber-500/20 border border-amber-500/30 text-amber-400 px-4 py-1.5 rounded-xl flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest animate-pulse"><AlertTriangle size={12} /> Pendiente</div>
+            )}
           </div>
-          <h3 className="font-black italic text-white uppercase truncate mb-3 leading-none">{choferData?.nombre || "Operador"}</h3>
-          <button className="w-full py-2 bg-white text-[#0D47A1] rounded-xl font-black text-[10px] uppercase tracking-widest">Configurar Cuenta</button>
+          <button className="w-full py-2 bg-white text-[#0D47A1] rounded-xl font-black text-[10px] uppercase tracking-widest mt-2">Configurar Cuenta</button>
         </div>
-
-        {/* MONITOR ADJUNTO DE TRIPLE VERIFICACIÓN */}
-        <div className="bg-[#0a1d3d]/60 backdrop-blur-md p-5 rounded-[28px] border border-white/5 mb-6 text-left">
-          <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest mb-3">🔐 Auditoría Operativa</p>
-          {choferData?.kyc_verificado ? (
-            <div className="bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 p-3 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase"><CheckCircle size={14} /><span>Línea Validada ✔</span></div>
-          ) : totalSubidos === 3 ? (
-            <div className="bg-orange-500/20 border border-orange-500/30 text-orange-300 p-3 rounded-xl flex items-center gap-2 text-[10px] font-black uppercase italic animate-pulse"><Loader2 size={14} className="animate-spin" /><span>Evaluación Pendiente</span></div>
-          ) : (
-            <div className="text-amber-400 text-[10px] font-black uppercase flex items-center gap-2 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-              <AlertTriangle size={14} /><span>Progreso: {totalSubidos}/3 Fotos</span>
-            </div>
-          )}
-        </div>
-
-        {/* ENLACES PRIVADOS SIDEBAR */}
-        <div className="flex-1 space-y-2">
+        <div className="flex-1 space-y-2 mt-4">
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><LayoutDashboard size={18} /> Controles de Ruta</button>
-          
-          <button onClick={() => { setVistaActiva("reservas"); setIsMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "reservas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}>
-            <div className="flex items-center gap-4"><Users size={18} /> Pasajeros A Bordo</div>
-            {reservasActivas.length > 0 && <span className="bg-orange-500 text-white px-2 py-0.5 rounded-full">{reservasActivas.length}</span>}
-          </button>
-          
-          <button onClick={() => { setVistaActiva("historico"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "historico" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Clock size={18} /> Historial de Trayectos</button>
+          <button onClick={() => { setVistaActiva("reservas"); setIsMenuOpen(false); }} className={`w-full flex items-center justify-between p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "reservas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><div className="flex gap-4"><Users size={18}/> A Bordo</div>{reservasActivas.length > 0 && <span className="bg-orange-500 text-white px-2 py-0.5 rounded-full">{reservasActivas.length}</span>}</button>
+          <button onClick={() => { setVistaActiva("historico"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left transition-colors ${vistaActiva === "historico" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><ListOrdered size={18} /> Tu Historial</button>
         </div>
-        
-        <button onClick={handleLogout} className="flex items-center justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase border border-red-500/20 hover:bg-red-50 hover:text-white transition-all"><LogOut size={16} /> Salir del Sistema</button>
+        <button onClick={handleLogout} className="flex justify-center gap-3 w-full p-5 bg-red-500/10 rounded-[24px] font-black text-red-400 text-[10px] uppercase border border-red-500/20"><LogOut size={16} /> Salir</button>
       </div>
 
-      {/* NAVBAR SUPERIOR PRINCIPAL */}
-      <nav className="bg-white border-b border-slate-100 px-6 py-4 flex justify-between items-center relative z-30 shadow-sm text-slate-800">
-        <button 
-          onClick={(e) => {
-            e.stopPropagation(); 
-            setIsMenuOpen(true);
-          }} 
-          className="bg-slate-100 p-2.5 rounded-xl border border-slate-200/50 hover:bg-slate-200 text-[#0D47A1] transition-colors flex items-center justify-center"
-        >
-          <Menu size={20} />
-        </button>
-        
-        <div className="relative" ref={menuRef}>
-          <button 
-            onClick={() => setMenuAbierto(!menuAbierto)}
-            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-full font-bold text-xs uppercase tracking-wider text-slate-700 transition-all active:scale-95 select-none"
-          >
-            <div className="w-5 h-5 bg-[#0D47A1] text-white text-[10px] rounded-full flex items-center justify-center font-black overflow-hidden relative">
-              {choferData?.avatar_url ? <img src={choferData.avatar_url} className="w-full h-full object-cover" /> : choferData?.nombre ? choferData.nombre[0].toUpperCase() : "U"}
-              {reservasActivas.length > 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>}
-            </div>
-            Hola, {choferData?.nombre ? choferData.nombre.split(" ")[0] : "Operador"} <ChevronDown size={14} className={`transition-transform duration-200 ${menuAbierto ? 'rotate-180' : ''}`} />
-          </button>
-
-          {/* MENU DESPLEGABLE SUPERIOR */}
+      <nav className="bg-white border-b border-slate-100 px-6 py-4 flex justify-between items-center z-30 shadow-sm text-slate-800">
+        <button onClick={() => setIsMenuOpen(true)} className="bg-slate-100 p-2.5 rounded-xl border border-slate-200/50 text-[#0D47A1]"><Menu size={20} /></button>
+        <button onClick={() => setMenuAbierto(!menuAbierto)} className="flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full font-bold text-xs uppercase text-slate-700 relative">
+          <div className="w-5 h-5 bg-[#0D47A1] text-white text-[10px] rounded-full flex items-center justify-center">{choferData?.nombre ? choferData.nombre[0].toUpperCase() : "U"}</div>
+          {choferData?.nombre} <ChevronDown size={14} />
           {menuAbierto && (
-            <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 animate-in fade-in slide-in-from-top-3 duration-200 z-50">
-              <div className="px-3 py-2 border-b border-slate-50 text-left">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Operador Activo</p>
-                <p className="text-xs font-bold text-slate-700 truncate">{choferData?.email || "correo@unefa.edu"}</p>
-              </div>
-              
-              <div className="space-y-0.5 mt-1.5">
-                <button onClick={() => { setVistaActiva("inicio"); setMenuAbierto(false); }} className="w-full flex items-center gap-3 text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
-                  <LayoutDashboard size={14} className="text-slate-400" /> Mi Panel
-                </button>
-                
-                <button onClick={() => { setVistaActiva("reservas"); setMenuAbierto(false); }} className="w-full flex items-center justify-between text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
-                  <div className="flex items-center gap-3"><Users size={14} className="text-slate-400" /> Pasajeros a bordo</div>
-                  {reservasActivas.length > 0 && <span className="bg-orange-100 text-orange-600 text-[9px] px-2 py-0.5 rounded-full font-black">{reservasActivas.length}</span>}
-                </button>
-
-                <button onClick={() => { setIsProfileModalOpen(true); setMenuAbierto(false); }} className="w-full flex items-center gap-3 text-left px-3 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-colors">
-                  <Settings size={14} className="text-slate-400" /> Configuración
-                </button>
-              </div>
-
-              <div className="border-t border-slate-50 mt-1.5 pt-1.5">
-                <button 
-                  onClick={handleLogout} 
-                  className="w-full flex items-center gap-3 text-left px-3 py-2.5 text-xs font-black text-red-500 uppercase tracking-widest hover:bg-red-50 rounded-xl transition-colors"
-                >
-                  <Power size={14} /> Cerrar Sesión
-                </button>
-              </div>
+            <div className="absolute top-12 right-0 w-48 bg-white rounded-2xl shadow-xl border p-2 z-50">
+              <div onClick={handleLogout} className="px-3 py-2 text-red-500 text-xs font-black uppercase hover:bg-red-50 rounded-xl cursor-pointer">Cerrar Sesión</div>
             </div>
           )}
-        </div>
+        </button>
       </nav>
 
-      {/* --- VISTA MAESTRA CENTRAL --- */}
+      {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 px-8 pt-8 pb-48 overflow-y-auto no-scrollbar">
-        
-        {/* BLOQUEO EN CALIENTE: INTERFAZ MÚLTIPLE DE CARGA KYC */}
         {!choferData?.kyc_verificado ? (
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-[30px] flex items-center gap-4 text-left">
-              <ShieldAlert size={36} className="shrink-0 text-amber-400" />
-              <div>
-                <p className="font-black text-xs uppercase tracking-tight">Acceso Bloqueado</p>
-                <p className="text-[11px] opacity-80 font-medium">Debes completar el triple envío para que la administración te habilite en los tableros de reservas.</p>
-              </div>
-            </div>
-
-            <div className="bg-[#0D47A1] border border-white/10 rounded-3xl p-5 space-y-2">
-              <div className="flex justify-between text-[10px] font-black uppercase tracking-wider text-blue-200">
-                <span>Fotografías Reglamentarias</span>
-                <span>{totalSubidos} de 3 Cargadas</span>
-              </div>
-              <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(totalSubidos / 3) * 100}%` }}></div>
-              </div>
-            </div>
-
+            <div className="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-[30px] flex gap-4"><ShieldAlert size={36} /><div><p className="font-black text-xs uppercase">Acceso Bloqueado</p><p className="text-[11px] opacity-80">El administrador está evaluando tus documentos KYC.</p></div></div>
             <div className="space-y-3">
-              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${choferData?.kyc_cedula_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><FileText size={20} /></div>
-                  <div><h4 className="text-xs font-black uppercase">Cédula del Conductor</h4><p className="text-[10px] text-blue-200">Foto nítida del documento.</p></div>
-                </div>
-                {choferData?.kyc_cedula_url ? <CheckCircle size={20} className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("cedula"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}
-              </div>
-
-              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${choferData?.kyc_vehiculo_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><Car size={20} /></div>
-                  <div><h4 className="text-xs font-black uppercase">Unidad Operativa</h4><p className="text-[10px] text-blue-200">Debe verse la placa: {choferData?.placa_vehiculo || "N/A"}</p></div>
-                </div>
-                {choferData?.kyc_vehiculo_url ? <CheckCircle size={20} className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("vehiculo"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}
-              </div>
-
-              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-2xl ${choferData?.kyc_rostro_url ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-slate-400'}`}><Smile size={20} /></div>
-                  <div><h4 className="text-xs font-black uppercase">Foto del Rostro</h4><p className="text-[10px] text-blue-200">Selfie de frente tipo carnet.</p></div>
-                </div>
-                {choferData?.kyc_rostro_url ? <CheckCircle size={20} className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("rostro"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}
-              </div>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex justify-between"><div className="flex gap-3"><FileText size={20} /> <div><h4 className="text-xs font-black uppercase">Cédula</h4></div></div>{choferData?.kyc_cedula_url ? <CheckCircle className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("cedula"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}</div>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex justify-between"><div className="flex gap-3"><Car size={20} /> <div><h4 className="text-xs font-black uppercase">Unidad</h4></div></div>{choferData?.kyc_vehiculo_url ? <CheckCircle className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("vehiculo"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}</div>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-3xl flex justify-between"><div className="flex gap-3"><Smile size={20} /> <div><h4 className="text-xs font-black uppercase">Rostro</h4></div></div>{choferData?.kyc_rostro_url ? <CheckCircle className="text-emerald-400" /> : <button onClick={() => { setKycTypeActive("rostro"); setShowKycModal(true); }} className="bg-white text-[#1566D0] font-black text-[10px] uppercase px-4 py-2 rounded-xl">Cargar</button>}</div>
             </div>
-
-            {totalSubidos === 3 && (
-              <div className="p-4 bg-orange-500/20 border border-orange-500/40 text-orange-200 text-xs font-bold rounded-2xl uppercase tracking-wide text-center animate-pulse">
-                ⏳ Documentación completa. En revisión administrativa.
-              </div>
-            )}
           </div>
         ) : (
-          /* VISTA OPERATIVA ACTIVADA CUANDO KYC ES TRUE */
           <>
             {vistaActiva === "inicio" && (
-              <div className="space-y-6 animate-in slide-in-from-bottom duration-300">
+              <div className="space-y-6">
                 <div className={`bg-gradient-to-br ${choferData?.estado === 'en ruta' ? 'from-orange-500 to-red-600' : 'from-[#2979FF] to-[#1566D0]'} rounded-[45px] p-9 shadow-2xl relative border border-white/10 transition-colors duration-500 text-left`}>
                   <Car className="absolute -right-6 -bottom-6 w-48 h-48 opacity-10 rotate-12" />
                   <div className="relative z-10">
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Unidad de Transporte Activa</p>
-                    <h2 className="text-4xl font-black italic tracking-tighter mb-6 uppercase leading-none">PLACA: {choferData?.placa_vehiculo}</h2>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1">Unidad Activa</p>
+                    <h2 className="text-4xl font-black italic tracking-tighter mb-6 uppercase">PLACA: {choferData?.placa_vehiculo}</h2>
                     <div className="flex gap-4">
-                      <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Estado</p><p className="text-sm font-black italic uppercase tracking-wider">{choferData?.estado}</p></div>
-                      <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Salida registrada</p><p className="text-sm font-black italic">{choferData?.hora_salida || '--:--'}</p></div>
+                      <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Estado</p><p className="text-sm font-black italic uppercase">{choferData?.estado}</p></div>
+                      <div className="bg-white/15 px-5 py-3 rounded-2xl flex-1 text-center"><p className="text-[9px] font-black uppercase opacity-60 mb-1">Salida</p><p className="text-sm font-black italic">{choferData?.hora_salida || '--:--'}</p></div>
                     </div>
                   </div>
                 </div>
@@ -791,132 +476,117 @@ export default function DriverDashboard() {
                 <div className="bg-white text-[#0D47A1] rounded-[40px] p-8 shadow-2xl flex flex-col items-center">
                   <p className="text-[11px] font-black uppercase text-slate-400 tracking-widest mb-4">Puestos Libres Disponibles</p>
                   <div className="flex items-center gap-8 mb-4">
-                    <button onClick={() => updatePuestos(choferData.puestos_libres - 1)} className="text-slate-200 hover:text-red-500 transition-colors active:scale-90"><MinusCircle size={56} strokeWidth={1.5} /></button>
-                    <div className="text-center">
-                      <span className="text-7xl font-black italic leading-none">{choferData?.puestos_libres}</span>
-                      <p className="text-[9px] font-black text-slate-400 uppercase mt-1">De {choferData?.capacidad_total} Totales</p>
-                    </div>
-                    <button onClick={() => updatePuestos(choferData.puestos_libres + 1)} className="text-slate-200 hover:text-green-500 transition-colors active:scale-90"><PlusCircle size={56} strokeWidth={1.5} /></button>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-[#0D47A1] transition-all duration-500" style={{ width: `${(choferData?.puestos_libres / choferData?.capacidad_total) * 100}%` }}></div>
+                    <button onClick={() => updatePuestos(choferData.puestos_libres - 1)} className="text-slate-200 hover:text-red-500 transition-colors"><MinusCircle size={56} strokeWidth={1.5} /></button>
+                    <div className="text-center"><span className="text-7xl font-black italic leading-none">{choferData?.puestos_libres}</span></div>
+                    <button onClick={() => updatePuestos(choferData.puestos_libres + 1)} className="text-slate-200 hover:text-green-500 transition-colors"><PlusCircle size={56} strokeWidth={1.5} /></button>
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => setShowReporteModal(true)} 
-                  className="w-full bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 text-orange-400 rounded-[30px] p-5 shadow-sm flex items-center justify-between transition-all active:scale-95"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="bg-orange-500/20 p-3 rounded-2xl"><AlertTriangle size={24} /></div>
-                    <div className="text-left">
-                      <h4 className="text-sm font-black uppercase">Reportar Incidencia</h4>
-                      <p className="text-[10px] font-bold opacity-80">Gasolina, averías, retrasos</p>
-                    </div>
-                  </div>
-                  <ArrowRight size={20} />
+                <button onClick={() => setShowReporteModal(true)} className="w-full bg-orange-500/10 border border-orange-500/20 hover:bg-orange-500/20 text-orange-400 rounded-[30px] p-5 flex items-center justify-between transition-all">
+                  <div className="flex items-center gap-4"><div className="bg-orange-500/20 p-3 rounded-2xl"><AlertTriangle size={24} /></div><div className="text-left"><h4 className="text-sm font-black uppercase">Reportar Incidencia</h4></div></div><ArrowRight size={20} />
                 </button>
               </div>
             )}
 
-            {/* 🔥 VISTA: LISTA DE ESTUDIANTES RESERVADOS CON DOBLE OPCIÓN 🔥 */}
+            {/* 🔥 VISTA: PASAJEROS A BORDO CON BOTÓN CORREGIDO 🔥 */}
             {vistaActiva === "reservas" && (
-              <div className="space-y-4 animate-in slide-in-from-bottom duration-300 text-left">
-                <div className="flex justify-between items-center px-2">
-                  <h2 className="text-xl font-black italic uppercase tracking-tight">Pasajeros a Bordo</h2>
-                  <button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-3 py-1.5 rounded-xl uppercase font-black hover:bg-white/20">Volver</button>
-                </div>
-                
-                {reservasActivas.length === 0 ? (
-                  <div className="bg-white/5 p-8 rounded-[30px] border border-white/10 text-center text-blue-200 mt-6 shadow-inner">
-                    <Users size={48} className="mx-auto mb-4 opacity-50" />
-                    <p className="text-sm font-bold uppercase tracking-widest">Sin reservas pendientes</p>
-                    <p className="text-[10px] mt-2 opacity-70">Los estudiantes que reserven su cupo aparecerán aquí en tiempo real.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4 mt-4">
-                    {reservasActivas.map((reserva, idx) => (
-                      <div key={idx} className="bg-white p-5 rounded-[24px] shadow-xl flex flex-col gap-4 text-[#0D47A1] animate-in fade-in duration-300">
-                        
-                        {/* Fila superior: Info del estudiante y Estado actual */}
-                        <div className="flex items-start justify-between">
-                          <div className="flex gap-4">
-                            <div className="bg-blue-100 p-3 rounded-full text-blue-600 self-start"><User size={20}/></div>
-                            <div>
-                              <p className="text-sm font-black uppercase leading-tight">{reserva.nombre_estudiante || "Estudiante"}</p>
-                              <p className="text-[10px] font-bold text-slate-400 flex items-center gap-1 mt-0.5"><MapPin size={10}/> {reserva.ubicacion || "Parada General"}</p>
-                              
-                              {/* Indicador visual de si el chofer ya respondió */}
-                              {reserva.estado_conductor && reserva.estado_conductor !== 'Pendiente' && (
-                                <span className={`inline-block mt-2 text-[9px] font-black uppercase px-2 py-1 rounded-md ${reserva.estado_conductor === 'Confirmado' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                                  Tú: {reserva.estado_conductor}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="text-right">
-                            <p className="text-[10px] font-black text-orange-500 uppercase">
-                              {reserva.puestos || 1} Asiento(s)
-                            </p>
-                          </div>
+              <div className="space-y-4 text-left">
+                <h2 className="text-xl font-black italic uppercase tracking-tight mb-4">Pasajeros a Bordo</h2>
+                {reservasActivas.map((reserva, idx) => (
+                  <div key={idx} className="bg-white p-5 rounded-[24px] shadow-xl text-[#0D47A1]">
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-4">
+                        <div className="bg-blue-100 p-3 rounded-full text-blue-600"><User size={20}/></div>
+                        <div>
+                          <p className="text-sm font-black uppercase">{reserva.nombre_estudiante}</p>
+                          <p className="text-[10px] font-bold text-slate-400"><MapPin size={10} className="inline"/> {reserva.ubicacion}</p>
                         </div>
-
-                        <div className="w-full h-px bg-slate-100"></div>
-
-                        {/* Fila inferior: Botones de Acción */}
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => abrirModalAviso(reserva)}
-                            className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5"
-                          >
-                            <MessageSquare size={14} /> Avisar
-                          </button>
-                          
-                          <button 
-                            onClick={() => marcarComoAbordado(reserva.id)}
-                            className="flex-1 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5"
-                          >
-                            <CheckCircle2 size={14} /> Abordó
-                          </button>
-                        </div>
-
                       </div>
-                    ))}
+                      <div className="text-right"><p className="text-[10px] font-black text-orange-500 uppercase">{reserva.puestos} P.</p></div>
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button onClick={() => abrirModalAviso(reserva)} className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase"><MessageSquare size={14} className="inline" /> Avisar</button>
+                      <button onClick={() => removerPasajero(reserva.id, reserva.puestos || 1)} className="flex-1 bg-red-50 text-red-600 hover:bg-red-500 hover:text-white py-2.5 rounded-xl text-[10px] font-black uppercase"><UserMinus size={14} className="inline" /> Ausente</button>
+                    </div>
                   </div>
-                )}
+                ))}
+                {reservasActivas.length === 0 && <p className="text-center text-xs opacity-50 uppercase tracking-widest font-bold mt-10">Sin reservas pendientes</p>}
               </div>
             )}
 
             {vistaActiva === "historico" && (
-              <div className="space-y-4 animate-in slide-in-from-bottom duration-300 text-left">
-                <div className="flex justify-between items-center px-2"><h2 className="text-xl font-black italic uppercase tracking-tight">Historial de Recorridos</h2><button onClick={() => setVistaActiva("inicio")} className="text-[10px] bg-white/10 px-3 py-1.5 rounded-xl uppercase font-black">Volver</button></div>
-                <div className="bg-[#0D47A1] p-6 rounded-[30px] border border-white/10 flex items-center justify-between shadow-xl">
-                  <div className="flex items-center gap-4">
-                    <div className="bg-emerald-500/20 p-3 rounded-2xl text-emerald-400"><CheckCircle size={24}/></div>
-                    <div><p className="text-sm font-black italic uppercase">Ruta Maraven Centro</p><p className="text-[10px] text-blue-300 font-bold uppercase">Estatus: Finalizado con éxito</p></div>
-                  </div>
-                  <div className="text-right text-[10px] font-bold text-white/60"><Clock size={12} className="inline mr-1 opacity-60"/>{new Date().toLocaleDateString()}</div>
+              <div className="space-y-6 text-left pb-10 animate-in slide-in-from-bottom duration-300">
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-2xl font-black italic uppercase tracking-tight">Tu Historial</h2>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white/10 border border-white/20 p-5 rounded-[24px] shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1">Viajes Hoy</p>
+                    <p className="text-3xl font-black italic">{viajesHoy.length}</p>
+                  </div>
+                  <div className="bg-white/10 border border-white/20 p-5 rounded-[24px] shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-300 mb-1">Pasajeros Hoy</p>
+                    <p className="text-3xl font-black italic text-emerald-400">{totalPasajerosHoy}</p>
+                  </div>
+                </div>
+                
+                <div className="w-full h-px bg-white/10 my-6"></div>
+
+                {historialViajes.length > 0 ? (
+                  Object.keys(historialAgrupado).map((fecha, index) => (
+                    <div key={index} className="space-y-4">
+                      <div className="flex items-center gap-2 text-blue-200 opacity-80">
+                        <Calendar size={14} />
+                        <h3 className="text-xs font-black uppercase tracking-widest">{fecha}</h3>
+                      </div>
+
+                      <div className="space-y-4">
+                        {historialAgrupado[fecha].map((viaje, idx) => (
+                          <div key={idx} className="bg-white text-[#0D47A1] rounded-[24px] p-5 shadow-xl relative overflow-hidden flex flex-col gap-3 transition-all hover:scale-[1.01]">
+                            
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="text-[9px] font-bold uppercase text-slate-400 tracking-widest mb-0.5">Ruta</p>
+                                <p className="text-sm font-black uppercase leading-tight">{viaje.ruta}</p>
+                              </div>
+                              <div className="text-right bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg border border-emerald-100">
+                                <p className="text-sm font-black leading-none">{viaje.pasajeros_transportados || 0} P.</p>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4 mt-1 border-t border-slate-100 pt-3">
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><Clock size={10}/> Salida</p>
+                                <p className="text-sm font-black italic text-slate-700">{viaje.hora_salida || "--:--"}</p>
+                              </div>
+                              <div>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1"><CheckCircle2 size={10}/> Llegada</p>
+                                <p className="text-sm font-black italic text-slate-700">{viaje.hora_llegada || "--:--"}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-10">
+                    <ListOrdered size={48} className="mx-auto mb-4 opacity-20" />
+                    <p className="text-xs opacity-50 uppercase tracking-widest font-bold">Aún no has completado ningún trayecto</p>
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* --- SECTOR INFERIOR DE ACCIÓN (DISPARADOR DE RUTA) --- */}
       {vistaActiva === "inicio" && choferData?.kyc_verificado && (
-        <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#1566D0] via-[#1566D0] to-transparent pt-16 z-30 flex flex-col">
-          <button 
-            onClick={toggleRuta}
-            className={`w-full py-6 rounded-[32px] font-black text-xl shadow-2xl uppercase italic flex items-center justify-center gap-4 transition-all ${
-              choferData.estado === 'en ruta' 
-                ? 'bg-orange-500 text-white border-4 border-white/20 active:scale-95'
-                : 'bg-white text-[#1566D0] active:scale-95' 
-            }`}
-          >
+        <div className="fixed bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-[#1566D0] to-transparent pt-16 z-30">
+          <button onClick={toggleRuta} className={`w-full py-6 rounded-[32px] font-black text-xl shadow-2xl uppercase italic flex items-center justify-center gap-4 transition-all ${choferData.estado === 'en ruta' ? 'bg-orange-500 text-white active:scale-95' : 'bg-white text-[#1566D0] active:scale-95'}`}>
             {choferData.estado === 'disponible' ? <Navigation size={24} /> : <CheckCircle size={24} />}
-            {choferData.estado === 'disponible' ? "Iniciar Trayecto de Ruta" : "Finalizar Trayecto"}
+            {choferData.estado === 'disponible' ? "Iniciar Trayecto" : "Finalizar Trayecto"}
           </button>
         </div>
       )}
