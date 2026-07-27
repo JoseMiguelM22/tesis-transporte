@@ -13,7 +13,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// 📍 COORDENADAS OPERATIVAS REALES
+// 📍 COORDENADAS OPERATIVAS REALES (PUNTOS CLAVE DE TU TESIS)
 const COORDENADAS_PUNTOS = {
   PuntaCardon: [11.6214, -70.2152],
   Maraven: [11.6622, -70.2031],
@@ -21,28 +21,33 @@ const COORDENADAS_PUNTOS = {
   Centro: [11.7042, -70.1805]
 };
 
-// 🔥 TRAZADO VECTORIAL EXACTO SEGÚN TUS RUTAS
+// 🔥 TRAZADO VECTORIAL DIRECTO: MARAVEN -> UNEFA -> CENTRO
 const RUTA_MARAVEN_UNEFA_CENTRO = [
   COORDENADAS_PUNTOS.Maraven,
-  [11.6655, -70.2010],
-  [11.6758, -70.1960],
-  [11.6815, -70.1932],
-  [11.6872, -70.1905],
+  [11.6685, -70.1990],
+  [11.6730, -70.1975],
+  [11.6785, -70.1940],
+  [11.6860, -70.1915],
   COORDENADAS_PUNTOS.UNEFA,
-  [11.6965, -70.1850],
-  [11.7001, -70.1825],
+  [11.6965, -70.1855],
+  [11.6990, -70.1840],
+  [11.7015, -70.1825],
   COORDENADAS_PUNTOS.Centro
 ];
 
+// 🔥 TRAZADO VECTORIAL DIRECTO: PUNTA CARDÓN -> MARAVEN -> UNEFA
 const RUTA_PUNTACARDON_MARAVEN_UNEFA = [
   COORDENADAS_PUNTOS.PuntaCardon,
-  [11.6255, -70.2135],               
-  [11.6375, -70.2095], 
-  [11.6440, -70.2075],
-  [11.6565, -70.2045],
+  [11.6250, -70.2140],
+  [11.6315, -70.2110],
+  [11.6380, -70.2095],
+  [11.6455, -70.2070],
+  [11.6530, -70.2055],
   COORDENADAS_PUNTOS.Maraven,
-  [11.6702, -70.1985],
-  [11.6815, -70.1932], 
+  [11.6685, -70.1990],
+  [11.6730, -70.1975],
+  [11.6785, -70.1940],
+  [11.6860, -70.1915],
   COORDENADAS_PUNTOS.UNEFA
 ];
 
@@ -50,7 +55,10 @@ const RUTA_PUNTACARDON_MARAVEN_UNEFA = [
 function RecenterMap({ coords }) {
   const map = useMap();
   useEffect(() => {
-    if (coords) map.setView(coords, 14);
+    if (coords) {
+      // PanTo hace un movimiento de cámara suave tipo GPS real
+      map.panTo(coords, { animate: true, duration: 1.5 });
+    }
   }, [coords, map]);
   return null;
 }
@@ -76,7 +84,6 @@ export default function Dashboard() {
   const [loadingPagina, setLoadingPagina] = useState(true); 
   const [vistaActiva, setVistaActiva] = useState("inicio");
   
-  // 🔥 ESTADO DE NOTIFICACIÓN PUSH
   const [showNotification, setShowNotification] = useState(false);
   
   // Estados de Reservas y Anti-Spam
@@ -104,7 +111,7 @@ export default function Dashboard() {
   const proximaUnidad = unidadesDisponibles.sort((a, b) => (a.hora_salida > b.hora_salida ? 1 : -1))[0];
   const selectedUnit = selectedUnitId ? unidadesDisponibles.find(u => u.id === selectedUnitId) : proximaUnidad;
 
-  // Animación GPS
+  // Animación GPS (Realista y Suave)
   useEffect(() => {
     if (!selectedUnit) return;
     const esRutaCentro = selectedUnit.ruta?.toLowerCase().includes("centro");
@@ -113,10 +120,11 @@ export default function Dashboard() {
     let index = 0;
     setBusLocation(puntosRuta[0]);
 
+    // Intervalo ajustado a 1.5 segundos para un movimiento más fluido
     const intervaloGps = setInterval(() => {
       index = (index + 1) % puntosRuta.length;
       setBusLocation(puntosRuta[index]);
-    }, 2500); 
+    }, 1500); 
 
     return () => clearInterval(intervaloGps);
   }, [selectedUnitId, selectedUnit?.id]);
@@ -306,7 +314,7 @@ export default function Dashboard() {
 
   // 🎨 CONFIGURACIÓN DE ÍCONOS VECTORIALES LEAFLET
   const iconAutobus = L.divIcon({
-    html: `<div class="bg-orange-500 text-white p-2.5 rounded-full shadow-2xl border-2 border-white flex items-center justify-center w-10 h-10 transition-transform duration-300"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-1.1 0-2 .9-2 2v7h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg></div>`,
+    html: `<div class="bg-orange-500 text-white p-2.5 rounded-full shadow-2xl border-2 border-white flex items-center justify-center w-10 h-10 transition-all duration-1000 ease-linear"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-1.1 0-2 .9-2 2v7h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg></div>`,
     className: "", iconSize: [40, 40], iconAnchor: [20, 40]
   });
 
@@ -315,18 +323,16 @@ export default function Dashboard() {
     className: "", iconSize: [32, 32], iconAnchor: [16, 32]
   });
 
-  // Datos para notificación
   const viajeActual = misReservasHistorial.length > 0 ? misReservasHistorial[0] : null;
   const choferViajeActual = viajeActual ? unidades.find(u => u.placa_vehiculo === viajeActual.unidad) : null;
   const nombreChoferViaje = choferViajeActual ? `${choferViajeActual.nombre} ${choferViajeActual.apellido}`.trim() : "El conductor";
 
-  // 🔥 EFECTO PARA TEMPORIZADOR DE NOTIFICACIÓN PUSH
   useEffect(() => {
     if (viajeActual?.estado_conductor && viajeActual.estado_conductor !== 'Pendiente') {
       setShowNotification(true);
       const timer = setTimeout(() => {
         setShowNotification(false);
-      }, 6000); // 6 segundos y se oculta sola
+      }, 6000); 
       return () => clearTimeout(timer);
     }
   }, [viajeActual?.mensaje_conductor, viajeActual?.estado_conductor]);
@@ -343,7 +349,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
       
-      {/* 🔥 NOTIFICACIÓN PUSH TIPO APP (AUTO-OCULTABLE Y CERRABLE) 🔥 */}
       {showNotification && viajeActual && viajeActual.estado_conductor !== 'Pendiente' && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md bg-white/95 backdrop-blur-xl p-4 rounded-3xl shadow-2xl border-l-[6px] border-orange-500 flex items-start gap-4 animate-in slide-in-from-top-10 fade-in duration-500">
           <div className="bg-orange-100 p-3 rounded-full text-orange-600 shrink-0 shadow-inner">
@@ -463,7 +468,6 @@ export default function Dashboard() {
           <button onClick={() => { setVistaActiva("rutas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left ${vistaActiva === "rutas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Clock size={18} /> Historial Abordajes</button>
         </div>
 
-        {/* 🔥 FOOTER ACERCA DE NATIVO EN EL SIDEBAR 🔥 */}
         <div className="mt-auto pt-6 border-t border-white/10 text-left">
           <p className="text-[9px] font-black uppercase text-blue-300 mb-2 flex items-center gap-1"><Code size={12}/> Desarrolladores</p>
           <p className="text-xs font-bold text-white leading-tight">José Miguel Medina</p>
@@ -497,23 +501,26 @@ export default function Dashboard() {
             {selectedUnit ? (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
                 
-                {/* 🌍 MAPA INTERACTIVO (PRIMER CUADRO) */}
+                {/* 🌍 MAPA INTERACTIVO ULTRA-REALISTA */}
                 <div className="bg-white rounded-[40px] p-2 shadow-2xl border-4 border-white/10 relative overflow-hidden">
                   <div className="w-full h-72 rounded-[32px] overflow-hidden z-10 relative border border-slate-100 shadow-inner">
                     <MapContainer center={COORDENADAS_PUNTOS.UNEFA} zoom={14} scrollWheelZoom={false} className="w-full h-full">
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                       
-                      <Polyline positions={selectedUnit.ruta?.toLowerCase().includes("centro") ? RUTA_MARAVEN_UNEFA_CENTRO : RUTA_PUNTACARDON_MARAVEN_UNEFA} color={selectedUnit.ruta?.toLowerCase().includes("centro") ? "#1E3A8A" : "#047857"} weight={8} opacity={0.4} />
-                      <Polyline positions={selectedUnit.ruta?.toLowerCase().includes("centro") ? RUTA_MARAVEN_UNEFA_CENTRO : RUTA_PUNTACARDON_MARAVEN_UNEFA} color={selectedUnit.ruta?.toLowerCase().includes("centro") ? "#3B82F6" : "#10B981"} weight={4} opacity={1} />
+                      {/* 🔥 DIBUJA TODA LA RED DE RUTAS FIJA 🔥 */}
+                      <Polyline positions={RUTA_MARAVEN_UNEFA_CENTRO} color="#1E3A8A" weight={8} opacity={0.3} />
+                      <Polyline positions={RUTA_MARAVEN_UNEFA_CENTRO} color="#3B82F6" weight={4} opacity={1} />
                       
+                      <Polyline positions={RUTA_PUNTACARDON_MARAVEN_UNEFA} color="#047857" weight={8} opacity={0.3} />
+                      <Polyline positions={RUTA_PUNTACARDON_MARAVEN_UNEFA} color="#10B981" weight={4} opacity={1} />
+                      
+                      {/* 🔥 DIBUJA LAS PARADAS FIJAS 🔥 */}
                       <Marker position={COORDENADAS_PUNTOS.UNEFA} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Sede UNEFA</span></Popup></Marker>
                       <Marker position={COORDENADAS_PUNTOS.Maraven} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Maraven</span></Popup></Marker>
-                      {selectedUnit.ruta?.toLowerCase().includes("centro") ? (
-                        <Marker position={COORDENADAS_PUNTOS.Centro} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Centro</span></Popup></Marker>
-                      ) : (
-                        <Marker position={COORDENADAS_PUNTOS.PuntaCardon} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Punta Cardón</span></Popup></Marker>
-                      )}
+                      <Marker position={COORDENADAS_PUNTOS.Centro} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Centro</span></Popup></Marker>
+                      <Marker position={COORDENADAS_PUNTOS.PuntaCardon} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Punta Cardón</span></Popup></Marker>
 
+                      {/* EL VEHÍCULO EN MOVIMIENTO */}
                       <Marker position={busLocation} icon={iconAutobus}>
                         <Popup>
                           <div className="text-center font-bold text-slate-800">
@@ -526,7 +533,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* INFO DE LA UNIDAD ACTIVA (SEGUNDO CUADRO) */}
+                {/* INFO DE LA UNIDAD ACTIVA */}
                 <div className="bg-gradient-to-br from-[#2979FF] to-[#1566D0] rounded-[40px] p-8 shadow-2xl relative border border-white/10">
                   <div className="relative z-10 text-left">
                     <p className="text-[10px] font-black uppercase tracking-widest text-blue-200 mb-1 flex items-center gap-1"><Car size={12}/> Detalles de Viaje</p>
@@ -604,17 +611,14 @@ export default function Dashboard() {
           {selectedUnit && userData.kyc_verificado && !limiteAlcanzado && (
             <div className="flex flex-col gap-3 bg-[#0D47A1] p-4 rounded-3xl border border-white/10 shadow-2xl max-w-sm mx-auto w-full">
               <span className="text-[10px] font-black uppercase text-blue-200">¿Dónde abordarás?</span>
+              
+              {/* 🔥 BOTONES DE RUTAS FIJOS 🔥 */}
               <div className="flex gap-2">
-                {selectedUnit.ruta?.toLowerCase().includes("centro") ? (
-                  ['Maraven', 'UNEFA', 'Centro'].map((loc) => (
-                    <button key={loc} onClick={() => setUbicacion(loc)} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase ${ubicacion === loc ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'}`}>{loc}</button>
-                  ))
-                ) : (
-                  ['P. Cardón', 'Maraven', 'UNEFA'].map((loc) => (
-                    <button key={loc} onClick={() => setUbicacion(loc)} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase ${ubicacion === loc ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'}`}>{loc}</button>
-                  ))
-                )}
+                {['UNEFA', 'Centro', 'P. Cardón'].map((loc) => (
+                  <button key={loc} onClick={() => setUbicacion(loc)} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase ${ubicacion === loc ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'}`}>{loc}</button>
+                ))}
               </div>
+
               <div className="flex items-center justify-between mt-2">
                 <span className="text-[10px] font-black uppercase text-blue-200">Asientos:</span>
                 <div className="flex gap-2">
