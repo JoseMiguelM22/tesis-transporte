@@ -2,63 +2,82 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   LogOut, Car, Menu, X, User, Camera, Check, Edit2, Loader2, 
   CreditCard, Image as ImageIcon, ArrowRight, AlertTriangle, FileText, 
-  CheckCircle, Clock, MapPin, MessageSquare, Navigation, Code
+  MapPin, MessageSquare, Code, Clock
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { VehicleCard } from "../../components/VehicleCard";
 
-// 🌍 COMPONENTES DE LEAFLET
+// 🌍 REACT-LEAFLET: ESTABLE Y CONFIABLE
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// 📍 COORDENADAS OPERATIVAS REALES (PUNTOS CLAVE DE TU TESIS)
+// 📍 COORDENADAS EXCLUSIVAS (Sin Maraven)
 const COORDENADAS_PUNTOS = {
   PuntaCardon: [11.6214, -70.2152],
-  Maraven: [11.6622, -70.2031],
   UNEFA: [11.6934, -70.1872],
   Centro: [11.7042, -70.1805]
 };
 
-// 🔥 TRAZADO VECTORIAL DIRECTO: MARAVEN -> UNEFA -> CENTRO
-const RUTA_MARAVEN_UNEFA_CENTRO = [
-  COORDENADAS_PUNTOS.Maraven,
-  [11.6685, -70.1990],
-  [11.6730, -70.1975],
-  [11.6785, -70.1940],
-  [11.6860, -70.1915],
-  COORDENADAS_PUNTOS.UNEFA,
-  [11.6965, -70.1855],
-  [11.6990, -70.1840],
-  [11.7015, -70.1825],
-  COORDENADAS_PUNTOS.Centro
+// 🔥 TRAYECTOS VIALES REALES CURVOS (UNEFA -> CENTRO)
+const RUTA_UNEFA_CENTRO = [
+  [11.6934, -70.1872], // UNEFA
+  [11.6948, -70.1866], // Bajando Av. Bolívar / Intercomunal
+  [11.6962, -70.1858],
+  [11.6975, -70.1849],
+  [11.6988, -70.1840],
+  [11.7001, -70.1831],
+  [11.7015, -70.1822],
+  [11.7028, -70.1813],
+  [11.7042, -70.1805]  // Centro
 ];
 
-// 🔥 TRAZADO VECTORIAL DIRECTO: PUNTA CARDÓN -> MARAVEN -> UNEFA
-const RUTA_PUNTACARDON_MARAVEN_UNEFA = [
-  COORDENADAS_PUNTOS.PuntaCardon,
-  [11.6250, -70.2140],
-  [11.6315, -70.2110],
-  [11.6380, -70.2095],
-  [11.6455, -70.2070],
-  [11.6530, -70.2055],
-  COORDENADAS_PUNTOS.Maraven,
-  [11.6685, -70.1990],
-  [11.6730, -70.1975],
-  [11.6785, -70.1940],
-  [11.6860, -70.1915],
-  COORDENADAS_PUNTOS.UNEFA
+// 🔥 TRAYECTOS VIALES REALES CURVOS (PUNTA CARDON -> UNEFA)
+// Más de 18 puntos siguiendo la curva de la Av. Ollarvides
+const RUTA_PUNTACARDON_UNEFA = [
+  [11.6214, -70.2152], // Punta Cardón
+  [11.6238, -70.2131], // Saliendo
+  [11.6265, -70.2106], // Curva 1
+  [11.6292, -70.2085], // Curva 2
+  [11.6322, -70.2066],
+  [11.6355, -70.2050],
+  [11.6390, -70.2036],
+  [11.6426, -70.2023], // Distribuidor Redoma
+  [11.6465, -70.2012],
+  [11.6505, -70.2001],
+  [11.6548, -70.1991],
+  [11.6592, -70.1980],
+  [11.6638, -70.1968], // Paso por Zona Maraven
+  [11.6685, -70.1955],
+  [11.6732, -70.1940],
+  [11.6780, -70.1924], // Intercomunal Alí Primera
+  [11.6830, -70.1907],
+  [11.6882, -70.1890],
+  [11.6934, -70.1872]  // Llegada UNEFA
 ];
 
-// COMPONENTE AUXILIAR DEL MAPA
+// 🚀 ALGORITMO DE INTERPOLACIÓN (Genera micropuntos para animación Uber)
+const interpolateRoute = (routeCoords, steps = 15) => {
+  const interpolated = [];
+  for (let i = 0; i < routeCoords.length - 1; i++) {
+    const [lat1, lon1] = routeCoords[i];
+    const [lat2, lon2] = routeCoords[i + 1];
+    for (let j = 0; j < steps; j++) {
+      const fraction = j / steps;
+      interpolated.push([ lat1 + (lat2 - lat1) * fraction, lon1 + (lon2 - lon1) * fraction ]);
+    }
+  }
+  interpolated.push(routeCoords[routeCoords.length - 1]);
+  return interpolated;
+};
+
+// COMPONENTE PARA QUE LA CÁMARA SIGA AL BUS SUAVEMENTE
 function RecenterMap({ coords }) {
   const map = useMap();
   useEffect(() => {
-    if (coords) {
-      // PanTo hace un movimiento de cámara suave tipo GPS real
-      map.panTo(coords, { animate: true, duration: 1.5 });
-    }
+    // panTo mantiene el zoom alto y desliza la cámara
+    if (coords) map.panTo(coords, { animate: true, duration: 0.5 });
   }, [coords, map]);
   return null;
 }
@@ -83,10 +102,9 @@ export default function Dashboard() {
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
   const [loadingPagina, setLoadingPagina] = useState(true); 
   const [vistaActiva, setVistaActiva] = useState("inicio");
-  
   const [showNotification, setShowNotification] = useState(false);
   
-  // Estados de Reservas y Anti-Spam
+  // Estados de Reservas
   const [loadingReserva, setLoadingReserva] = useState(false);
   const [showTicket, setShowTicket] = useState(false);
   const [ticketData, setTicketData] = useState(null);
@@ -103,32 +121,36 @@ export default function Dashboard() {
   const [misReservasHistorial, setMisReservasHistorial] = useState([]); 
   const [selectedUnitId, setSelectedUnitId] = useState(null);
 
-  // Ubicación del bus en tiempo real
+  // GPS en tiempo real
   const [busLocation, setBusLocation] = useState(COORDENADAS_PUNTOS.UNEFA);
 
-  // Filtros de unidades
   const unidadesDisponibles = unidades.filter(u => u.puestos_libres > 0 && u.estado?.toLowerCase() === 'en ruta' && u.kyc_verificado === true);
   const proximaUnidad = unidadesDisponibles.sort((a, b) => (a.hora_salida > b.hora_salida ? 1 : -1))[0];
   const selectedUnit = selectedUnitId ? unidadesDisponibles.find(u => u.id === selectedUnitId) : proximaUnidad;
 
-  // Animación GPS (Realista y Suave)
+  // ==========================================
+  // 🚗 ANIMACIÓN DEL AUTOBÚS
+  // ==========================================
   useEffect(() => {
     if (!selectedUnit) return;
     const esRutaCentro = selectedUnit.ruta?.toLowerCase().includes("centro");
-    const puntosRuta = esRutaCentro ? RUTA_MARAVEN_UNEFA_CENTRO : RUTA_PUNTACARDON_MARAVEN_UNEFA;
+    const rutaBase = esRutaCentro ? RUTA_UNEFA_CENTRO : RUTA_PUNTACARDON_UNEFA;
       
+    // Ruta densa con interpolación para animación Uber
+    const rutaDensa = interpolateRoute(rutaBase, 15);
     let index = 0;
-    setBusLocation(puntosRuta[0]);
+    setBusLocation(rutaDensa[0]);
 
-    // Intervalo ajustado a 1.5 segundos para un movimiento más fluido
+    // Intervalo de 300ms + CSS Transition = Movimiento Ultra Fluido
     const intervaloGps = setInterval(() => {
-      index = (index + 1) % puntosRuta.length;
-      setBusLocation(puntosRuta[index]);
-    }, 1500); 
+      index = (index + 1) % rutaDensa.length;
+      setBusLocation(rutaDensa[index]);
+    }, 300); 
 
     return () => clearInterval(intervaloGps);
   }, [selectedUnitId, selectedUnit?.id]);
 
+  // Resto de la lógica del sistema
   useEffect(() => {
     let channelChoferes, channelReservas;
 
@@ -312,10 +334,11 @@ export default function Dashboard() {
     setIsSaving(false);
   };
 
-  // 🎨 CONFIGURACIÓN DE ÍCONOS VECTORIALES LEAFLET
+  // 🎨 CONFIGURACIÓN DE ÍCONOS DE LEAFLET
   const iconAutobus = L.divIcon({
-    html: `<div class="bg-orange-500 text-white p-2.5 rounded-full shadow-2xl border-2 border-white flex items-center justify-center w-10 h-10 transition-all duration-1000 ease-linear"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-1.1 0-2 .9-2 2v7h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg></div>`,
-    className: "", iconSize: [40, 40], iconAnchor: [20, 40]
+    html: `<div class="bg-orange-500 text-white p-2.5 rounded-full shadow-2xl border-2 border-white flex items-center justify-center w-10 h-10"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-1.1 0-2 .9-2 2v7h2"></path><circle cx="7" cy="17" r="2"></circle><path d="M9 17h6"></path><circle cx="17" cy="17" r="2"></circle></svg></div>`,
+    className: "smooth-marker", // 🔥 Clase CSS Mágica
+    iconSize: [40, 40], iconAnchor: [20, 40]
   });
 
   const iconParada = L.divIcon({
@@ -330,9 +353,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (viajeActual?.estado_conductor && viajeActual.estado_conductor !== 'Pendiente') {
       setShowNotification(true);
-      const timer = setTimeout(() => {
-        setShowNotification(false);
-      }, 6000); 
+      const timer = setTimeout(() => { setShowNotification(false); }, 6000); 
       return () => clearTimeout(timer);
     }
   }, [viajeActual?.mensaje_conductor, viajeActual?.estado_conductor]);
@@ -349,6 +370,11 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#1566D0] font-sans text-white flex flex-col relative overflow-hidden text-left">
       
+      {/* 🔥 MAGIA CSS PARA LEAFLET 🔥 */}
+      <style>{`
+        .smooth-marker { transition: transform 0.3s linear !important; }
+      `}</style>
+
       {showNotification && viajeActual && viajeActual.estado_conductor !== 'Pendiente' && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-md bg-white/95 backdrop-blur-xl p-4 rounded-3xl shadow-2xl border-l-[6px] border-orange-500 flex items-start gap-4 animate-in slide-in-from-top-10 fade-in duration-500">
           <div className="bg-orange-100 p-3 rounded-full text-orange-600 shrink-0 shadow-inner">
@@ -358,10 +384,7 @@ export default function Dashboard() {
             <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest mb-1">{nombreChoferViaje} envió un aviso:</p>
             <p className="text-sm font-bold text-[#0D47A1] leading-tight">"{viajeActual.mensaje_conductor}"</p>
           </div>
-          <button 
-            onClick={() => setShowNotification(false)} 
-            className="p-2 text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 rounded-full transition-colors shrink-0 active:scale-95"
-          >
+          <button onClick={() => setShowNotification(false)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-100 hover:bg-red-50 rounded-full transition-colors shrink-0 active:scale-95">
             <X size={16} />
           </button>
         </div>
@@ -488,7 +511,7 @@ export default function Dashboard() {
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 px-6 pt-6 pb-96 overflow-y-auto no-scrollbar space-y-6">
         
-        {/* VISTA 1: INICIO (MAPA DE PRIMERO) */}
+        {/* VISTA 1: INICIO */}
         {vistaActiva === "inicio" && (
           <>
             {!userData.kyc_verificado && (
@@ -501,26 +524,25 @@ export default function Dashboard() {
             {selectedUnit ? (
               <div className="space-y-6 animate-in slide-in-from-bottom duration-500">
                 
-                {/* 🌍 MAPA INTERACTIVO ULTRA-REALISTA */}
+                {/* 🌍 MAPA INTERACTIVO ZOOM X15 Y CURVAS REALES */}
                 <div className="bg-white rounded-[40px] p-2 shadow-2xl border-4 border-white/10 relative overflow-hidden">
                   <div className="w-full h-72 rounded-[32px] overflow-hidden z-10 relative border border-slate-100 shadow-inner">
-                    <MapContainer center={COORDENADAS_PUNTOS.UNEFA} zoom={14} scrollWheelZoom={false} className="w-full h-full">
+                    <MapContainer center={COORDENADAS_PUNTOS.UNEFA} zoom={15} scrollWheelZoom={false} className="w-full h-full z-0">
                       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                       
-                      {/* 🔥 DIBUJA TODA LA RED DE RUTAS FIJA 🔥 */}
-                      <Polyline positions={RUTA_MARAVEN_UNEFA_CENTRO} color="#1E3A8A" weight={8} opacity={0.3} />
-                      <Polyline positions={RUTA_MARAVEN_UNEFA_CENTRO} color="#3B82F6" weight={4} opacity={1} />
+                      {/* 🔥 RUTAS CON TRAZADO DENSO (CURVAS) 🔥 */}
+                      <Polyline positions={RUTA_UNEFA_CENTRO} color="#1E3A8A" weight={8} opacity={0.3} />
+                      <Polyline positions={RUTA_UNEFA_CENTRO} color="#3B82F6" weight={4} opacity={1} />
                       
-                      <Polyline positions={RUTA_PUNTACARDON_MARAVEN_UNEFA} color="#047857" weight={8} opacity={0.3} />
-                      <Polyline positions={RUTA_PUNTACARDON_MARAVEN_UNEFA} color="#10B981" weight={4} opacity={1} />
+                      <Polyline positions={RUTA_PUNTACARDON_UNEFA} color="#047857" weight={8} opacity={0.3} />
+                      <Polyline positions={RUTA_PUNTACARDON_UNEFA} color="#10B981" weight={4} opacity={1} />
                       
-                      {/* 🔥 DIBUJA LAS PARADAS FIJAS 🔥 */}
+                      {/* 🔥 SÓLO 3 MARCADORES FIJOS 🔥 */}
                       <Marker position={COORDENADAS_PUNTOS.UNEFA} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Sede UNEFA</span></Popup></Marker>
-                      <Marker position={COORDENADAS_PUNTOS.Maraven} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Maraven</span></Popup></Marker>
                       <Marker position={COORDENADAS_PUNTOS.Centro} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Centro</span></Popup></Marker>
                       <Marker position={COORDENADAS_PUNTOS.PuntaCardon} icon={iconParada}><Popup><span className="font-bold text-[#0D47A1]">Parada Punta Cardón</span></Popup></Marker>
 
-                      {/* EL VEHÍCULO EN MOVIMIENTO */}
+                      {/* EL VEHÍCULO EN MOVIMIENTO ULTRA FLUIDO */}
                       <Marker position={busLocation} icon={iconAutobus}>
                         <Popup>
                           <div className="text-center font-bold text-slate-800">
@@ -612,7 +634,7 @@ export default function Dashboard() {
             <div className="flex flex-col gap-3 bg-[#0D47A1] p-4 rounded-3xl border border-white/10 shadow-2xl max-w-sm mx-auto w-full">
               <span className="text-[10px] font-black uppercase text-blue-200">¿Dónde abordarás?</span>
               
-              {/* 🔥 BOTONES DE RUTAS FIJOS 🔥 */}
+              {/* 🔥 BOTONES DE RUTAS FIJOS (SÓLO 3) 🔥 */}
               <div className="flex gap-2">
                 {['UNEFA', 'Centro', 'P. Cardón'].map((loc) => (
                   <button key={loc} onClick={() => setUbicacion(loc)} className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase ${ubicacion === loc ? 'bg-emerald-500 text-white' : 'bg-white/10 text-white'}`}>{loc}</button>
