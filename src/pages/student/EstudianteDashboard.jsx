@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   LogOut, Car, Menu, X, User, Camera, Check, Edit2, Loader2, 
   CreditCard, Image as ImageIcon, ArrowRight, AlertTriangle, FileText, 
-  MapPin, MessageSquare, Code, Clock
+  MapPin, MessageSquare, Code, Clock, CheckCircle
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -34,7 +34,6 @@ const RUTA_UNEFA_CENTRO = [
 ];
 
 // 🔥 TRAYECTOS VIALES REALES CURVOS (PUNTA CARDON -> UNEFA)
-// Más de 18 puntos siguiendo la curva de la Av. Ollarvides
 const RUTA_PUNTACARDON_UNEFA = [
   [11.6214, -70.2152], // Punta Cardón
   [11.6238, -70.2131], // Saliendo
@@ -76,7 +75,6 @@ const interpolateRoute = (routeCoords, steps = 15) => {
 function RecenterMap({ coords }) {
   const map = useMap();
   useEffect(() => {
-    // panTo mantiene el zoom alto y desliza la cámara
     if (coords) map.panTo(coords, { animate: true, duration: 0.5 });
   }, [coords, map]);
   return null;
@@ -300,7 +298,7 @@ export default function Dashboard() {
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
       await supabase.from('perfiles').update({ [updateField]: publicUrl }).eq('id', userData.id);
       setUserData({ ...userData, [updateField]: publicUrl });
-      if (bucketKey === 'carnet') { alert("¡Carnet cargado con éxito!"); setShowKycOptionsModal(false); }
+      if (bucketKey === 'carnet') { alert("¡Carnet cargado con éxito! Pendiente de aprobación."); setShowKycOptionsModal(false); }
     } catch (e) { alert(e.message); }
     finally { setUploading(false); setSubiendoCarnet(false); setShowPhotoOptions(false); stopCamera(); }
   };
@@ -443,13 +441,14 @@ export default function Dashboard() {
           <div className="absolute inset-0 bg-[#0A1D3D]/90 backdrop-blur-sm" onClick={() => !subiendoCarnet && setShowKycOptionsModal(false)}></div>
           <div className="relative bg-[#0D47A1] text-white w-full max-w-sm rounded-[38px] shadow-2xl p-8 border border-white/10 animate-in zoom-in duration-200">
             <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4"><div className="flex items-center gap-2 text-blue-300"><FileText size={20} /><h3 className="text-sm font-black uppercase tracking-wider">Validar Identidad</h3></div><button disabled={subiendoCarnet} onClick={() => setShowKycOptionsModal(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10"><X size={16}/></button></div>
-            <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-2xl flex gap-3 text-left"><AlertTriangle size={18} className="shrink-0 text-amber-400" /><p className="text-[11px] font-medium leading-relaxed"><span className="font-black uppercase tracking-tight text-amber-100">⚠️ REQUISITO:</span> La foto del carnet debe ser perfectly NÍTIDA.</p></div>
+            <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-2xl flex gap-3 text-left"><AlertTriangle size={18} className="shrink-0 text-amber-400" /><p className="text-[11px] font-medium leading-relaxed"><span className="font-black uppercase tracking-tight text-amber-100">⚠️ REQUISITO:</span> La foto del carnet debe ser perfectamente NÍTIDA.</p></div>
             {subiendoCarnet ? <div className="text-center py-10 space-y-3"><Loader2 className="animate-spin text-orange-400 mx-auto" size={32} /><span className="text-[10px] font-black uppercase tracking-widest text-orange-400">Procesando...</span></div> : <div className="space-y-3"><button onClick={() => startCamera(true)} className="w-full bg-white/5 hover:bg-blue-600 border border-white/10 text-white p-5 rounded-2xl flex items-center justify-between group transition-all"><div className="flex flex-col text-left"><span className="text-sm font-black uppercase tracking-wide">Capturar con Cámara</span></div><Camera size={20} className="text-blue-400 group-hover:text-white" /></button><button onClick={() => carnetInputRef.current.click()} className="w-full bg-white/5 hover:bg-blue-600 border border-white/10 text-white p-5 rounded-2xl flex items-center justify-between group transition-all"><div className="flex flex-col text-left"><span className="text-sm font-black uppercase tracking-wide">Cargar de Galería</span></div><ImageIcon size={20} className="text-blue-400 group-hover:text-white" /></button></div>}
             <input type="file" ref={carnetInputRef} className="hidden" accept="image/*" onChange={(e) => handleUploadFile(e.target.files[0], 'carnet', 'carnet_url')} />
           </div>
         </div>
       )}
 
+      {/* 🔥 MODAL DE PERFIL 🔥 */}
       {isProfileModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
           <div className="absolute inset-0 bg-[#0D47A1]/80 backdrop-blur-xl" onClick={() => !showCamera && setIsProfileModalOpen(false)}></div>
@@ -462,11 +461,17 @@ export default function Dashboard() {
                 {showPhotoOptions && <div className="absolute right-12 bottom-0 bg-white rounded-2xl shadow-2xl p-2 border border-gray-100 flex flex-col gap-1 z-10 text-left"><button onClick={() => startCamera(false)} className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase"><Camera size={14} /> Cámara</button><button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 px-4 py-2 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase"><ImageIcon size={14} /> Galería</button></div>}
                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleUploadFile(e.target.files[0], 'avatar', 'avatar_url')} />
               </div>
+              
               <div className="space-y-6">
                 {isEditing ? (
                   <div className="space-y-3"><input className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-2 font-bold" value={tempData.nombre} onChange={e => setTempData({...tempData, nombre: e.target.value})} /><input className="w-full bg-gray-50 border-2 border-blue-50 rounded-xl px-4 py-2 font-bold" value={tempData.apellido} onChange={e => setTempData({...tempData, apellido: e.target.value})} /><button onClick={handleUpdateNames} className="w-full bg-emerald-500 text-white py-3 rounded-xl font-black text-[10px] uppercase">{isSaving ? "Guardando..." : "Confirmar"}</button></div>
                 ) : (
-                  <><div className="text-left"><p className="text-[10px] font-bold uppercase text-blue-400 mb-1">Estudiante</p><h3 className="text-2xl font-black italic uppercase leading-none">{userData.nombre} {userData.apellido}</h3></div><button onClick={() => setIsEditing(true)} className="w-full bg-gray-50 text-[#0D47A1] py-4 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all"><Edit2 size={14} /> Editar Datos</button></>
+                  <>
+                    <div className="text-left"><p className="text-[10px] font-bold uppercase text-blue-400 mb-1">Estudiante</p><h3 className="text-2xl font-black italic uppercase leading-none">{userData.nombre} {userData.apellido}</h3></div>
+                    <div className="flex flex-col gap-3 mt-4">
+                      <button onClick={() => setIsEditing(true)} className="w-full bg-gray-50 text-[#0D47A1] py-4 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 transition-all"><Edit2 size={14} /> Editar Datos</button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -474,19 +479,32 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR ACTUALIZADO */}
       <div className={`fixed inset-y-0 left-0 w-80 bg-[#0D47A1] z-50 transform ${isMenuOpen ? "translate-x-0" : "-translate-x-full"} transition-transform duration-500 flex flex-col p-8 shadow-2xl`}>
         <div className="flex justify-between items-center mb-6">
           <CreditCard size={20} className="text-blue-300" />
           <button onClick={() => setIsMenuOpen(false)} className="p-3 bg-white/5 rounded-2xl hover:bg-white/10 transition-colors"><X size={20} /></button>
         </div>
-        <div onClick={() => { setIsProfileModalOpen(true); setIsMenuOpen(false); }} className="bg-white/5 rounded-[32px] p-5 border border-white/10 mb-4 text-center cursor-pointer group transition-all">
-          <div className="w-20 h-20 rounded-2xl bg-blue-500 mx-auto mb-3 overflow-hidden border-2 border-white/20">{userData.avatar_url ? <img src={userData.avatar_url} className="w-full h-full object-cover" /> : <User className="m-auto mt-4 text-white" size={40} />}</div>
-          <h3 className="font-black italic text-white uppercase truncate mb-3 leading-none">{userData.nombre}</h3>
-          <button className="w-full py-2 bg-white text-[#0D47A1] rounded-xl font-black text-[10px] uppercase tracking-widest">Ver Perfil</button>
-        </div>
         
-        <div className="flex-1 space-y-2 mt-4">
+        {/* 🔥 TARJETA DE PERFIL (Solo edita nombre y foto) 🔥 */}
+        <div onClick={() => { setIsProfileModalOpen(true); setIsMenuOpen(false); }} className="bg-white/5 rounded-[32px] p-5 border border-white/10 mb-4 text-center cursor-pointer group hover:bg-white/10 transition-all">
+          <div className="w-20 h-20 rounded-2xl bg-blue-500 mx-auto mb-3 overflow-hidden border-2 border-white/20">{userData.avatar_url ? <img src={userData.avatar_url} className="w-full h-full object-cover" /> : <User className="m-auto mt-4 text-white" size={40} />}</div>
+          <h3 className="font-black italic text-white uppercase truncate mb-2 leading-none">{userData.nombre} {userData.apellido}</h3>
+          <p className="text-[9px] text-blue-200 font-bold uppercase tracking-widest flex items-center justify-center gap-1 group-hover:text-white transition-colors"><Edit2 size={10}/> Editar Perfil</p>
+        </div>
+
+        {/* 🔥 BOTÓN INDEPENDIENTE PARA VALIDAR CARNET (KYC) 🔥 */}
+        {!userData.kyc_verificado ? (
+          <button onClick={() => { setShowKycOptionsModal(true); setIsMenuOpen(false); }} className="w-full bg-amber-500 hover:bg-amber-600 text-white p-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 mb-6 transition-all shadow-lg active:scale-95">
+            <AlertTriangle size={14} /> Validar Carnet
+          </button>
+        ) : (
+          <div className="w-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 p-3 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 mb-6 cursor-default">
+            <CheckCircle size={14} /> Estudiante Verificado
+          </div>
+        )}
+        
+        <div className="flex-1 space-y-2">
           <button onClick={() => { setVistaActiva("inicio"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left ${vistaActiva === "inicio" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Car size={18} /> Panel Reservas</button>
           <button onClick={() => { setVistaActiva("rutas"); setIsMenuOpen(false); }} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-black text-[10px] uppercase text-left ${vistaActiva === "rutas" ? 'bg-white text-[#0D47A1]' : 'bg-white/5 text-white hover:bg-white/10'}`}><Clock size={18} /> Historial Abordajes</button>
         </div>
@@ -514,10 +532,14 @@ export default function Dashboard() {
         {/* VISTA 1: INICIO */}
         {vistaActiva === "inicio" && (
           <>
+            {/* 🔥 BANNER AHORA ES UN BOTÓN DIRECTO AL KYC 🔥 */}
             {!userData.kyc_verificado && (
-              <div className="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-[30px] flex items-center gap-4">
-                <AlertTriangle size={28} className="shrink-0 text-amber-400" />
-                <p className="text-[11px] font-medium">Valida tu carnet en el menú lateral para reservar asientos.</p>
+              <div onClick={() => setShowKycOptionsModal(true)} className="cursor-pointer p-5 bg-amber-500/10 border border-amber-500/30 text-amber-200 rounded-[30px] flex items-center gap-4 hover:bg-amber-500/20 transition-all shadow-lg active:scale-95">
+                <AlertTriangle size={28} className="shrink-0 text-amber-400 animate-pulse" />
+                <div className="text-left">
+                  <p className="text-[11px] font-black uppercase text-amber-400 tracking-wider mb-0.5">Acción Requerida</p>
+                  <p className="text-[10px] font-medium opacity-90 leading-tight">Toca aquí para subir tu carnet y desbloquear las reservas de asientos.</p>
+                </div>
               </div>
             )}
 

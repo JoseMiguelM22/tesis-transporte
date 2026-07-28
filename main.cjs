@@ -1,35 +1,45 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
-function createWindow () {
-  const mainWindow = new BrowserWindow({
-    width: 950, // Ancho inicial
-    height: 600, // Alto inicial
-    minWidth: 900,
-    minHeight: 600,
-    frame: true, // 🔥 AQUÍ QUITAMOS EL MARCO DE WINDOWS
+let mainWindow;
+
+function createWindow() {
+  // Configuración de la ventana de escritorio
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    title: "UniRoute - Panel Administrativo",
+    autoHideMenuBar: true, // Oculta el menú superior (Archivo, Editar, etc.) para que se vea más como app
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
     }
   });
 
-  // Como estamos en desarrollo, le decimos a Electron que muestre tu localhost
-  
-mainWindow.loadURL('http://localhost:5173/acceso-admin');
+  // Aquí detectamos si estamos en desarrollo o producción
+  const isDev = !app.isPackaged;
 
-  // (Nota para el futuro: Cuando vayas a exportar el .exe para la tesis, 
-  // esto se cambia para que lea el index.html de la carpeta dist)
+  if (isDev) {
+    // En modo desarrollo, Electron lee tu servidor de Vite en tiempo real
+    mainWindow.loadURL('http://localhost:5173/acceso-admin');
+  } else {
+    // En producción, lee los archivos estáticos ya compilados
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
 }
 
 app.whenReady().then(() => {
   createWindow();
 
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
   });
 });
 
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') app.quit();
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
 });
