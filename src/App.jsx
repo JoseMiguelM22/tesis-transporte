@@ -42,7 +42,8 @@ export default function App() {
       <AuthListener>
         <Routes>
           {/* RUTAS PÚBLICAS */}
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<GinevaStore />} />
+          <Route path="/gineva-admin" element={<GinevaAdmin />} />
           <Route path="/acceso-estudiante" element={<AccesoEstudiante />} />
           <Route path="/registro-estudiante" element={<RegistroEstudiante />} />
           <Route path="/reset-password" element={<ResetEstudiante />} />
@@ -53,7 +54,7 @@ export default function App() {
           <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
           <Route path="/formulario" element={<EncuestaTransporte />} />
           <Route path="/ginevastore" element={<GinevaStore />} />
-          <Route path="/gineva-admin" element={<GinevaAdmin />} />
+          
 
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
