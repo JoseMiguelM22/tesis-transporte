@@ -17,6 +17,8 @@ import AdminDashboard from "./pages/Admindashboard/AdminDashboard";
 import DriverDashboard from "./pages/driver/DriverDashboard";
 import ChequeadorDashboard from "./pages/Chequeador/ChequeadorDashboard";
 import EncuestaTransporte from "./pages/formulario/formulario";
+import GinevaStore from "./pages/GinevaStore/GinevaStore";
+import GinevaAdmin from "./pages/GinevaAdmin/GinevaAdmin";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -50,6 +52,8 @@ export default function App() {
           <Route path="/registro-chequeador" element={<RegistroChequeador />} />
           <Route path="/acceso-chequeador" element={<AccesoChequeador />} />
           <Route path="/formulario" element={<EncuestaTransporte />} />
+          <Route path="/ginevastore" element={<GinevaStore />} />
+          <Route path="/gineva-admin" element={<GinevaAdmin />} />
 
 
           {/* --- RUTAS PRIVADAS (Protegidas) --- */}
