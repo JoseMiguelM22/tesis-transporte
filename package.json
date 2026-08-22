@@ -23,6 +23,7 @@
     "@react-google-maps/api": "^2.20.8",
     "@supabase/supabase-js": "^2.100.1",
     "@tailwindcss/postcss": "^4.2.2",
+    "browser-image-compression": "^2.0.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.33.0",
     "mapbox-gl": "^3.23.1",
